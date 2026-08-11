@@ -2,8 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple requests pandas numpy
+RUN pip install --no-cache-dir requests pandas numpy
 
 COPY runner.py .
 
