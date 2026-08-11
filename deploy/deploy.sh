@@ -10,6 +10,24 @@ source deploy/preflight.sh
 
 ENV_FILE=".env.prod"
 
+# ============================ 策略运行器镜像 ============================
+# celery-worker 通过挂载 docker.sock 动态启动策略容器,镜像名固定 quanly-strategy-runner
+# (与 docker-compose.yml 的 STRATEGY_RUNNER_IMAGE 一致)。它不在 compose services 里,
+# 不会被 compose 自动构建,必须单独 build,否则页面启动策略会 404: pull access denied。
+STRATEGY_RUNNER_IMAGE="quanly-strategy-runner"
+
+build_strategy_runner() {
+  say "构建策略运行器镜像($STRATEGY_RUNNER_IMAGE)…"
+  docker build -t "$STRATEGY_RUNNER_IMAGE" ./strategy-runner
+}
+
+# 镜像不存在则构建(热更新时若 strategy-runner/ 无变更,只补齐缺失镜像)
+ensure_strategy_runner() {
+  if ! docker image inspect "$STRATEGY_RUNNER_IMAGE" >/dev/null 2>&1; then
+    build_strategy_runner
+  fi
+}
+
 # ============================ 首次部署 ============================
 first_deploy() {
   say "首次初始化:生成 $ENV_FILE"
@@ -50,6 +68,9 @@ EOF
   say "构建并拉起全部服务…"
   compose up -d --build --remove-orphans
 
+  # 策略运行器镜像不在 compose services 里,必须单独构建,否则页面启动策略会 404。
+  build_strategy_runner
+
   say "等待数据库就绪…"
   until compose exec -T postgres pg_isready -U quanly >/dev/null 2>&1; do
     sleep 2; echo "  等待 postgres…"
@@ -89,21 +110,23 @@ hot_update() {
   bash deploy/backup.sh || warn "备份失败/跳过,继续更新。"
 
   # 3) 变更检测
-  REBUILD_FRONTEND=0; REBUILD_BACKEND=0; RESTART_EDGE=0
+  REBUILD_FRONTEND=0; REBUILD_BACKEND=0; RESTART_EDGE=0; REBUILD_RUNNER=0
   if [ "$IS_GIT" = "1" ] && [ -n "$OLD_SHA" ] && [ "$OLD_SHA" != "$NEW_SHA" ]; then
     CHANGED="$(git diff --name-only "$OLD_SHA" "$NEW_SHA")"
     echo "$CHANGED" | grep -q '^frontend/' && REBUILD_FRONTEND=1
     echo "$CHANGED" | grep -qE '^backend/' && REBUILD_BACKEND=1
     echo "$CHANGED" | grep -qE '^(docker-compose\.yml|nginx/)' && RESTART_EDGE=1
-    if [ "$REBUILD_FRONTEND" = "0" ] && [ "$REBUILD_BACKEND" = "0" ] && [ "$RESTART_EDGE" = "0" ]; then
+    echo "$CHANGED" | grep -q '^strategy-runner/' && REBUILD_RUNNER=1
+    if [ "$REBUILD_FRONTEND" = "0" ] && [ "$REBUILD_BACKEND" = "0" ] && [ "$RESTART_EDGE" = "0" ] && [ "$REBUILD_RUNNER" = "0" ]; then
       say "无相关代码变更,无需重建。"
+      ensure_strategy_runner   # 补齐可能缺失的策略镜像(避免历史部署遗漏导致 404)
       docker image prune -f >/dev/null 2>&1 || true
       say "热更新完成(无改动)。"
       return 0
     fi
   else
     # 非 git 或无 diff → 全量重建(稳妥)
-    REBUILD_FRONTEND=1; REBUILD_BACKEND=1; RESTART_EDGE=1
+    REBUILD_FRONTEND=1; REBUILD_BACKEND=1; RESTART_EDGE=1; REBUILD_RUNNER=1
   fi
 
   # 4) 后端相关:先起基础设施 + 迁移
@@ -130,6 +153,13 @@ hot_update() {
     compose restart backend
     # backend 被 recreate 后容器 IP 变化,nginx 若缓存旧上游地址会对所有 /api 返回 502;重启 nginx 刷新 DNS 解析。
     RESTART_EDGE=1
+  fi
+
+  # 6.5) 策略运行器镜像:变更则重建,否则补齐缺失(不在 compose services,不会被自动重建)。
+  if [ "$REBUILD_RUNNER" = "1" ]; then
+    build_strategy_runner
+  else
+    ensure_strategy_runner
   fi
 
   # 7) 边缘代理重载(仅 nginx)
