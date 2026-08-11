@@ -89,14 +89,6 @@ onBeforeUnmount(() => clearInterval(timer));
         <div class="card-label">{{ $t("dashboard.swapValue") }}</div>
         <div class="card-val">{{ fmt(sum?.swap_value) }}</div>
       </div>
-      <div class="glass card">
-        <div class="card-label">{{ $t("dashboard.financeValue") }}</div>
-        <div class="card-val">{{ fmt(sum?.finance_value) }}</div>
-      </div>
-      <div class="glass card">
-        <div class="card-label">{{ $t("dashboard.loanValue") }}</div>
-        <div class="card-val">{{ fmt(sum?.loan_value) }}</div>
-      </div>
     </div>
 
     <div class="glass panel" v-if="sum?.positions_dist?.length">
