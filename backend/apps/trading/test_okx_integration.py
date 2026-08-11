@@ -1,7 +1,4 @@
 """真实 OKX 对接打桩测试(不真连):验证 adapter 新方法与 mode 分流逻辑。"""
-import pytest
-from cryptography.fernet import Fernet
-from django.contrib.auth import get_user_model
 
 
 def _stub_adapter(monkeypatch):
