@@ -1,0 +1,44 @@
+# 本地模式覆盖:补齐 base 缺少的 celery-beat + private-ws,保证本地也能实时回填/校正数据。
+# 用法:docker compose -f docker-compose.yml -f docker-compose.local.yml --env-file .env.prod up -d
+# 不含 Caddy(本地免域名/证书,入口走 base 的 nginx 8080)。
+# 注意:YAML 锚点不跨文件,故此处自带一份 backend-env(与 base 的 &backend-env 保持同步)。
+x-backend-env: &backend-env-local
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+  DJANGO_DEBUG: ${DJANGO_DEBUG}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+  SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+  DB_ENGINE: ${DB_ENGINE}
+  DB_NAME: ${DB_NAME}
+  DB_USER: ${DB_USER}
+  DB_PASSWORD: ${DB_PASSWORD}
+  DB_HOST: ${DB_HOST}
+  DB_PORT: ${DB_PORT}
+  INFLUX_URL: ${INFLUX_URL}
+  INFLUX_TOKEN: ${INFLUX_ADMIN_TOKEN}
+  INFLUX_ORG: ${INFLUX_ORG}
+  INFLUX_BUCKET: ${INFLUX_BUCKET}
+  REDIS_URL: ${REDIS_URL}
+  OKX_SYNC_INTERVAL: ${OKX_SYNC_INTERVAL:-20}
+  CELERY_BROKER_URL: ${REDIS_URL}
+  BACKEND_INTERNAL_URL: http://backend:8000
+  STRATEGY_RUNNER_IMAGE: quanly-strategy-runner
+  STRATEGY_DOCKER_NETWORK: quanly_default
+
+services:
+  celery-beat:
+    build: ./backend
+    command: celery -A config beat -l info
+    environment: *backend-env-local
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend
+
+  private-ws:
+    build: ./backend
+    command: python manage.py run_private_ws --env sim
+    environment: *backend-env-local
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend

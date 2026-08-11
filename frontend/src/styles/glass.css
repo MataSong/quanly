@@ -1,0 +1,142 @@
+:root[data-theme="dark"] {
+  --glass-bg: rgba(28, 28, 34, 0.55);
+  --glass-bg-strong: rgba(38, 38, 46, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --fg: #e8e8ed;
+  --fg-dim: #9a9aa5;
+  --bg: #0b0b10;
+  --accent: #0a84ff;
+  --glow-1: rgba(10, 132, 255, 0.25);
+  --glow-2: rgba(191, 90, 242, 0.22);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --fg: #1c1c1e;
+  --fg-dim: #6e6e73;
+  --bg: #f2f2f7;
+  --accent: #007aff;
+  --glow-1: rgba(0, 122, 255, 0.18);
+  --glow-2: rgba(255, 149, 0, 0.15);
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, "SF Pro Display", "SF Pro", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* 背景光晕,增强毛玻璃通透感 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(60% 50% at 15% 10%, var(--glow-1), transparent 70%),
+    radial-gradient(50% 45% at 85% 90%, var(--glow-2), transparent 70%);
+  pointer-events: none;
+}
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
+.btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+.btn:hover {
+  filter: brightness(1.08);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+.btn.sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--glass-border);
+}
+
+.input {
+  width: 100%;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--fg);
+  font-size: 14px;
+  outline: none;
+}
+.input:focus {
+  border-color: var(--accent);
+}
+
+/* —— 统一原生控件外观,消除各浏览器古老默认样式 —— */
+/* 数字输入的上下 spinner 箭头:隐藏(项目统一用 GlassNumber) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+/* 日期选择器图标随主题反色,避免 light 主题下黑图标不可见 */
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+:root[data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+}
+/* 全站滚动条玻璃化 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--glass-border);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

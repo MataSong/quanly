@@ -1,0 +1,62 @@
+# ===== Python / Django (backend) =====
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.bak
+*.done
+*.orig
+.pytest_cache/
+.mypy_cache/
+db.sqlite3
+db.sqlite3-journal
+*.log
+staticfiles/
+media/
+
+# ===== Node / Vue (frontend) =====
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== 环境变量 / 密钥(严禁提交)=====
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# ===== TLS 证书 =====
+nginx/certs/
+*.pem
+*.key
+*.crt
+
+# ===== 数据卷 / 用户数据 =====
+strategy_scripts/
+*.dump
+*.sql.gz
+backups/
+backups;C/
+
+# ===== Claude Code =====
+.claude/
+.qoder/
+
+# ===== IDE / 系统 =====
+.idea/
+.vscode/
+*.swp
+.DS_Store
+._*
+.AppleDouble
+.Spotlight-V100
+.Trashes
+Thumbs.db

@@ -1,0 +1,120 @@
+x-backend-env: &backend-env
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+  DJANGO_DEBUG: ${DJANGO_DEBUG}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+  SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+  DB_ENGINE: ${DB_ENGINE}
+  DB_NAME: ${DB_NAME}
+  DB_USER: ${DB_USER}
+  DB_PASSWORD: ${DB_PASSWORD}
+  DB_HOST: ${DB_HOST}
+  DB_PORT: ${DB_PORT}
+  INFLUX_URL: ${INFLUX_URL}
+  INFLUX_TOKEN: ${INFLUX_ADMIN_TOKEN}
+  INFLUX_ORG: ${INFLUX_ORG}
+  INFLUX_BUCKET: ${INFLUX_BUCKET}
+  REDIS_URL: ${REDIS_URL}
+  OKX_SYNC_INTERVAL: ${OKX_SYNC_INTERVAL:-20}
+  CELERY_BROKER_URL: ${REDIS_URL}
+  BACKEND_INTERNAL_URL: http://backend:8000
+  STRATEGY_RUNNER_IMAGE: quanly-strategy-runner
+  STRATEGY_DOCKER_NETWORK: quanly_default
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    volumes:
+      - redisdata:/data
+
+  influxdb:
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_ADMIN_TOKEN}
+    volumes:
+      - influxdata:/var/lib/influxdb2
+
+  backend:
+    build: ./backend
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      influxdb:
+        condition: service_started
+
+  # WebSocket 服务(Django Channels via daphne)
+  ws:
+    build: ./backend
+    command: daphne -b 0.0.0.0 -p 8001 config.asgi:application
+    environment: *backend-env
+    depends_on:
+      - redis
+      - backend
+
+  # 行情采集常驻进程:连 OKX 公共 WS,写 InfluxDB + 转发 Redis
+  market-collector:
+    build: ./backend
+    command: python manage.py run_collector
+    environment: *backend-env
+    depends_on:
+      - redis
+      - influxdb
+
+  # Celery worker:调度策略容器(Docker-out-of-Docker,挂宿主机 docker.sock)
+  celery-worker:
+    build: ./backend
+    command: celery -A config worker -l info -Q celery
+    environment: *backend-env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - strategy_scripts:/scripts
+    depends_on:
+      - redis
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - frontend_dist:/usr/share/nginx/html:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - ws
+      - frontend
+
+  # 前端只负责把 build 出的 dist 灌进共享卷,构建完即退出
+  frontend:
+    build: ./frontend
+    volumes:
+      - frontend_dist:/dist
+    command: sh -c "rm -rf /dist/* /dist/.[!.]* 2>/dev/null; cp -r /usr/share/nginx/html/. /dist/ && echo 'frontend assets published'"
+
+volumes:
+  pgdata: {}
+  redisdata: {}
+  influxdata: {}
+  frontend_dist: {}
+  strategy_scripts: {}
