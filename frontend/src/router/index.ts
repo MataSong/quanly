@@ -18,7 +18,6 @@ const router = createRouter({
         { path: "strategies", component: () => import("@/views/Strategies.vue") },
         { path: "strategies/:id", component: () => import("@/views/StrategyDetail.vue") },
         { path: "backtest", component: () => import("@/views/Backtest.vue") },
-        { path: "finance", component: () => import("@/views/Finance.vue") },
         { path: "transfer", component: () => import("@/views/Transfer.vue") },
         { path: "assets/bills", component: () => import("@/views/assets/Bills.vue") },
         { path: "settings/keys", component: () => import("@/views/settings/Keys.vue") },

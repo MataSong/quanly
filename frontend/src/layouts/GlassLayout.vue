@@ -34,7 +34,6 @@ const navItems = [
   { path: "/trade", key: "nav.trade" },
   { path: "/strategies", key: "nav.strategies" },
   { path: "/backtest", key: "nav.backtest" },
-  { path: "/finance", key: "nav.finance" },
   { path: "/transfer", key: "nav.transfer" },
   { path: "/assets/bills", key: "nav.bills" },
   { path: "/settings/keys", key: "nav.keys" },
