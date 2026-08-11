@@ -14,7 +14,7 @@ usage() {
   cat <<'EOF'
 Quanly 部署工具。用法: ./quanly <子命令>
 
-  deploy          一键部署(无配置→首次初始化并拉起;已部署→git pull 热更新)
+  deploy          一键部署(无配置→首次初始化并拉起;已部署→按当前代码全量重建)
   backup          备份 PostgreSQL 与 InfluxDB
   restore <file>  从指定备份恢复数据库
   status          查看各服务运行状态

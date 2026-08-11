@@ -4,7 +4,7 @@
 
 **Goal:** 提供单入口 `quanly` 命令,让小白一键完成本地/服务器部署与热更新。
 
-**Architecture:** 极薄分发器 `quanly.sh` + Windows 转调 `quanly.bat`,底层复用并强化现有 `deploy/*.sh`。新增 `deploy/lib.sh`(公共函数)、`deploy/preflight.sh`(环境自检)、`docker-compose.local.yml`(本地模式补齐常驻进程)。热更新按 git diff 路径只重建变更镜像。
+**Architecture:** 极薄分发器 `quanly.sh`(Linux/Mac),底层复用并强化现有 `deploy/*.sh`。新增 `deploy/lib.sh`(公共函数)、`deploy/preflight.sh`(环境自检)、`docker-compose.local.yml`(本地模式补齐常驻进程)。热更新按 git diff 路径只重建变更镜像。
 
 **Tech Stack:** Bash 脚本、Docker Compose、现有 Django/Vue 容器栈。
 
@@ -33,9 +33,8 @@
 | `deploy/backup.sh`(改) | 复用 lib.sh 的 compose/project_name |
 | `deploy/restore.sh`(改) | 复用 lib.sh |
 | `quanly.sh`(新增) | 唯一入口分发器 + status/logs/help 内联实现 |
-| `quanly.bat`(新增) | Windows 入口,定位 bash 转调 quanly.sh |
 
-**依赖顺序:** lib.sh → preflight.sh → docker-compose.local.yml → init.sh / update.sh / backup.sh / restore.sh → quanly.sh → quanly.bat
+**依赖顺序:** lib.sh → preflight.sh → docker-compose.local.yml → init.sh / update.sh / backup.sh / restore.sh → quanly.sh
 
 ---
 
@@ -348,7 +347,7 @@ Expected: 无输出
 
 前置:确保当前目录已有真实 `.env.prod`。计算其 md5:
 Run: `md5sum .env.prod`
-记下哈希值。此步仅验证脚本逻辑分支——在 Task 9 的手动清单里再做完整运行验证。此处只确认 `bash -n` 通过即可。
+记下哈希值。此步仅验证脚本逻辑分支——在 Task 10 的手动清单里再做完整运行验证。此处只确认 `bash -n` 通过即可。
 
 ---
 
@@ -617,54 +616,6 @@ Expected: 打印帮助文本;然后对 bogus 打印黄色 `[!] 未知子命令: 
 
 ---
 
-## Task 9: Windows 入口 quanly.bat
-
-**Files:**
-- Create: `quanly.bat`
-
-- [ ] **Step 1: 写 quanly.bat 完整内容**
-
-定位 git-bash 或 WSL 的 bash,转调 `quanly.sh`,参数原样透传。
-
-`quanly.bat`:
-
-```bat
-@echo off
-REM Quanly Windows 入口:定位 git-bash 或 WSL 的 bash,转调 quanly.sh。
-setlocal
-
-REM 1) 优先常见 git-bash 路径
-set "BASH_EXE="
-if exist "%ProgramFiles%\Git\bin\bash.exe" set "BASH_EXE=%ProgramFiles%\Git\bin\bash.exe"
-if not defined BASH_EXE if exist "%ProgramFiles(x86)%\Git\bin\bash.exe" set "BASH_EXE=%ProgramFiles(x86)%\Git\bin\bash.exe"
-
-REM 2) 回退 PATH 中的 bash(git-bash 已加入 PATH 的情况)
-if not defined BASH_EXE for %%i in (bash.exe) do if not defined BASH_EXE set "BASH_EXE=%%~$PATH:i"
-
-if defined BASH_EXE (
-  "%BASH_EXE%" "%~dp0quanly.sh" %*
-  goto :eof
-)
-
-REM 3) 再回退 WSL
-where wsl >nul 2>nul
-if %errorlevel%==0 (
-  wsl bash "./quanly.sh" %*
-  goto :eof
-)
-
-echo [x] 未找到 bash。请安装 Git for Windows(自带 git-bash):
-echo     https://git-scm.com/download/win
-echo 安装后重新运行本命令。
-exit /b 1
-```
-
-- [ ] **Step 2: 语法目视核对**
-
-`.bat` 无 `bash -n` 等价工具。目视确认:三级回退(git-bash 固定路径 → PATH → WSL)、`%*` 透传参数、`%~dp0` 定位脚本同目录。无 Task 间引用的变量名冲突。
-
----
-
 ## Task 10: 手动集成验证清单
 
 **Files:** 无(仅运行验证)
@@ -716,7 +667,6 @@ Expected: 红色 `[x] Docker 未运行。请启动 Docker Desktop 后重试。` 
 
 **1. Spec coverage:**
 - 单入口 quanly 子命令 → Task 8 ✅
-- Windows .bat 转调 → Task 9 ✅
 - lib.sh 公共函数 → Task 1 ✅
 - preflight 环境自检 → Task 2 ✅
 - 本地模式补 celery-beat/private-ws(local override)→ Task 3 ✅

@@ -17,7 +17,7 @@
 
 - 不做真·免重启热加载（gunicorn --reload / 源码挂载）—— 用户已选“重建变更镜像即可”。
 - 不做多机/集群编排、CI/CD 集成。
-- 不做 Windows 纯 CMD 原生支持 —— `quanly.bat` 依赖 git-bash 或 WSL 提供 bash（Windows 上运行 bash 脚本的唯一现实路径）。
+- 仅支持 Linux/Mac 部署。
 - 不改动已验证可用的备份/恢复核心逻辑，只做复用重构。
 
 ## 已确认的设计决策
@@ -37,7 +37,6 @@
 
 ```
 quanly.sh          ← 唯一入口(Linux/Mac/服务器)。解析子命令并分发到 deploy/*.sh
-quanly.bat         ← Windows 入口。定位 git-bash/WSL 的 bash,转调 quanly.sh
 docker-compose.local.yml  ← 新增。本地模式补齐 celery-beat + private-ws(不含 Caddy)
 deploy/
   lib.sh           ← 新增。公共函数库,被其余脚本 source
@@ -51,7 +50,6 @@ deploy/
 ### 单元职责
 
 - **quanly.sh**：极薄分发器。`case "$1"` 分发到子命令函数，每个子命令函数调用对应 `deploy/*.sh`。提供 `help`/`status`/`logs` 内联实现（简单，无需独立脚本）。
-- **quanly.bat**：探测 `bash`（优先 git-bash 常见路径 `C:\Program Files\Git\bin\bash.exe`，回退 `wsl bash`），把参数原样透传给 `quanly.sh`。若都找不到，打印安装 git-bash 的指引并退出。
 - **deploy/lib.sh**：不可执行，仅被 `source`。导出：
   - `COMPOSE_LOCAL` / `COMPOSE_PROD`：两种模式的 compose 命令字符串。
   - `compose()`：按 `$QUANLY_MODE`（local/server）选择正确的 compose 命令。

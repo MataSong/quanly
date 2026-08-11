@@ -16,10 +16,8 @@ say "备份 PostgreSQL → $OUT/db-$TS.sql.gz"
 compose exec -T postgres pg_dump -U quanly quanly | gzip > "$OUT/db-$TS.sql.gz"
 
 say "备份 InfluxDB 数据卷 → $OUT/influx-$TS.tar.gz"
-# 只挂载数据卷(卷名不受路径转换影响),tar 到 stdout 再由宿主机重定向落盘。
-# MSYS_NO_PATHCONV/MSYS2_ARG_CONV_EXCL:阻止 git-bash 把容器内路径(/data 等)误转成 Windows 路径。
-if MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-   docker run --rm -v "${PROJECT}_influxdata":/data alpine \
+# 只挂载数据卷,tar 到 stdout 再由宿主机重定向落盘。
+if docker run --rm -v "${PROJECT}_influxdata":/data alpine \
      tar czf - -C /data . > "$OUT/influx-$TS.tar.gz"; then
   :
 else
