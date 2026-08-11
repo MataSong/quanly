@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # 备份:PostgreSQL 逻辑导出 + InfluxDB 数据卷打包,保留最近 14 份。
-# 复用 deploy/lib.sh(compose 按 QUANLY_MODE 选择,不再硬编码 prod)。
+# 复用 deploy/lib.sh(compose 固定用 .env.prod)。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source deploy/lib.sh
 
 ENV_FILE=".env.prod"
-[ -f "$ENV_FILE" ] || die "缺少 $ENV_FILE,请先运行:./quanly init"
-load_mode
+[ -f "$ENV_FILE" ] || die "缺少 $ENV_FILE,请先运行:./quanly deploy"
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="backups"; mkdir -p "$OUT"

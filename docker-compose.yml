@@ -93,6 +93,26 @@ services:
       - redis
       - backend
 
+  # Celery beat:按 OKX_SYNC_INTERVAL 定时全量校正余额/持仓(兜底 WS 遗漏)
+  celery-beat:
+    build: ./backend
+    command: celery -A config beat -l info
+    environment: *backend-env
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend
+
+  # OKX 私有 WS 采集器:按用户凭证登录,实时回填余额/持仓/订单(模拟盘)
+  private-ws:
+    build: ./backend
+    command: python manage.py run_private_ws --env sim
+    environment: *backend-env
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - backend
+
   nginx:
     image: nginx:alpine
     ports:

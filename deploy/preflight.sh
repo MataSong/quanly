@@ -18,10 +18,8 @@ preflight() {
   docker compose version >/dev/null 2>&1 \
     || die "docker compose 不可用。请升级到较新版 Docker Desktop。"
 
-  # 端口占用(软性):本地查 8080;服务器查 80/443
-  local mode="${QUANLY_MODE:-local}"
-  local ports
-  if [ "$mode" = "server" ]; then ports="80 443"; else ports="8080"; fi
+  # 端口占用(软性):固定查 8080
+  local ports="8080"
   for p in $ports; do
     if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
       warn "端口 $p 已被占用(若是本项目自身在跑可忽略)。"
