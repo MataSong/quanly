@@ -132,6 +132,14 @@ services:
       - frontend_dist:/dist
     command: sh -c "rm -rf /dist/* /dist/.[!.]* 2>/dev/null; cp -r /usr/share/nginx/html/. /dist/ && echo 'frontend assets published'"
 
+  # 策略运行器镜像:纳入 compose 构建,避免漏 build 导致启动策略 404。
+  # 构建完即退出(不常驻),不进入任何 depends_on 链路。
+  strategy-runner-build:
+    build: ./strategy-runner
+    image: quanly-strategy-runner
+    command: ["true"]
+    restart: "no"
+
 volumes:
   pgdata: {}
   redisdata: {}

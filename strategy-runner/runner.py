@@ -26,6 +26,7 @@ class Ctx:
 
     symbol = SYMBOL
     interval = INTERVAL
+    _out = None  # 原始 stdout,避免 log 经包装器递归
 
     def price(self, symbol=None):
         r = requests.get(
@@ -76,7 +77,8 @@ class Ctx:
         return self._order("sell", sz, symbol, **kw)
 
     def log(self, message):
-        print(message, flush=True)
+        (self._out or sys.__stdout__).write(str(message) + "\n")
+        (self._out or sys.__stdout__).flush()
         try:
             requests.post(
                 f"{BACKEND_URL}/api/strategy-api/log",
@@ -88,8 +90,46 @@ class Ctx:
             pass
 
 
+    def heartbeat(self):
+        try:
+            requests.post(
+                f"{BACKEND_URL}/api/strategy-api/heartbeat",
+                json={},
+                headers=_HEADERS,
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+
+class _LogStream:
+    """把写入 stdout 的整行文本转发给 ctx.log,使只 print 的脚本日志也能上报。"""
+
+    def __init__(self, ctx, original):
+        self._ctx = ctx
+        self._orig = original
+        self._buf = ""
+
+    def write(self, s):
+        self._orig.write(s)
+        self._buf += s
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                try:
+                    self._ctx.log(line)
+                except Exception:
+                    pass
+
+    def flush(self):
+        self._orig.flush()
+
+
 def main():
     ctx = Ctx()
+    orig_stdout = sys.stdout
+    ctx._out = orig_stdout
+    sys.stdout = _LogStream(ctx, orig_stdout)
     with open(SCRIPT_PATH) as f:
         code = f.read()
 
@@ -104,6 +144,7 @@ def main():
                 on_tick(ctx)
             except Exception as e:  # 单次 tick 出错不终止策略
                 ctx.log("on_tick error: %s" % e)
+            ctx.heartbeat()
             time.sleep(INTERVAL)
     else:
         # 文件式:脚本已在 exec 时执行(自带主循环)。若已返回则结束。

@@ -30,9 +30,9 @@ function logout() {
 
 const navItems = [
   { path: "/dashboard", key: "nav.dashboard" },
-  { path: "/market/BTC-USDT", key: "nav.market" },
-  { path: "/trade", key: "nav.trade" },
-  { path: "/strategies", key: "nav.strategies" },
+  { path: "/trade", key: "nav.terminal" },
+  { path: "/strategies/templates", key: "nav.strategies" },
+  { path: "/strategies/tasks", key: "nav.tasks" },
   { path: "/backtest", key: "nav.backtest" },
   { path: "/transfer", key: "nav.transfer" },
   { path: "/assets/bills", key: "nav.bills" },
@@ -40,8 +40,10 @@ const navItems = [
 ];
 
 function isActive(item: { path: string }) {
-  if (item.path.startsWith("/market")) return route.path.startsWith("/market");
-  if (item.path === "/strategies") return route.path.startsWith("/strategies");
+  if (item.path === "/trade") return route.path.startsWith("/trade") || route.path.startsWith("/market");
+  if (item.path === "/strategies/templates")
+    return route.path === "/strategies/templates" || route.path === "/strategies";
+  if (item.path === "/strategies/tasks") return route.path.startsWith("/strategies/tasks");
   return route.path === item.path;
 }
 </script>

@@ -15,11 +15,18 @@ class Strategy(models.Model):
         BUILTIN = "builtin", "内置"
         UPLOADED = "uploaded", "自定义"
 
+    class Mode(models.TextChoices):
+        CODE = "code", "代码"
+        VISUAL = "visual", "可视化"
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     name = models.CharField(max_length=64)
     language = models.CharField(max_length=16, default="python")
     source = models.TextField()
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.UPLOADED)
+    mode = models.CharField(max_length=8, choices=Mode.choices, default=Mode.CODE)
+    visual_config = models.JSONField(null=True, blank=True)
+    description = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -44,8 +51,10 @@ class StrategyRun(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     container_id = models.CharField(max_length=80, blank=True, default="")
     run_token = models.CharField(max_length=64, unique=True, default=gen_run_token)
+    batch_id = models.CharField(max_length=40, blank=True, default="", db_index=True)
     started_at = models.DateTimeField(auto_now_add=True)
     stopped_at = models.DateTimeField(null=True, blank=True)
+    last_heartbeat = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-started_at"]

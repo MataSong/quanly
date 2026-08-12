@@ -105,3 +105,75 @@ class MarketConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data=None, bytes_data=None):
         # 前端目前只订阅、不发消息
         pass
+
+
+def build_depth_payload(symbol, row):
+    """把 OKX books5 的一档数据转成前端消息。row: {"bids":[[px,sz,..],..],"asks":[...]}"""
+
+    def _levels(side):
+        return [[float(x[0]), float(x[1])] for x in (row.get(side) or [])]
+
+    return json.dumps(
+        {"type": "depth", "symbol": symbol, "bids": _levels("bids"), "asks": _levels("asks")}
+    )
+
+
+class DepthConsumer(AsyncWebsocketConsumer):
+    """前端连 /ws/depth/{symbol};直连 OKX 公共 WS 订阅 books5 转发买卖五档。"""
+
+    async def connect(self):
+        self.symbol = self.scope["url_route"]["kwargs"]["symbol"]
+        await self.accept()
+        self._closing = False
+        self._task = asyncio.create_task(self._run_okx())
+
+    async def _run_okx(self):
+        from okx.websocket.WsPublicAsync import WsPublicAsync
+
+        url = settings.OKX_PUBLIC_WS_SIM
+        loop = asyncio.get_running_loop()
+
+        def on_message(raw):
+            try:
+                msg = json.loads(raw)
+            except (ValueError, TypeError):
+                return
+            data = msg.get("data")
+            if not data:
+                return
+            symbol = msg.get("arg", {}).get("instId", self.symbol)
+            payload = build_depth_payload(symbol, data[0])
+            asyncio.run_coroutine_threadsafe(self.send(text_data=payload), loop)
+
+        backoff = 1
+        while not self._closing:
+            try:
+                ws = WsPublicAsync(url=url)
+                self._ws = ws
+                await ws.start()
+                await ws.subscribe(
+                    [{"channel": "books5", "instId": self.symbol}], callback=on_message
+                )
+                backoff = 1
+                while not self._closing:
+                    await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                break
+            except Exception:  # noqa: BLE001
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+
+    async def disconnect(self, code):
+        self._closing = True
+        task = getattr(self, "_task", None)
+        if task:
+            task.cancel()
+        ws = getattr(self, "_ws", None)
+        if ws:
+            try:
+                await ws.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def receive(self, text_data=None, bytes_data=None):
+        pass

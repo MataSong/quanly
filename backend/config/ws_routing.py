@@ -1,11 +1,12 @@
 from django.urls import re_path
 
-from apps.market.consumers import MarketConsumer
+from apps.market.consumers import DepthConsumer, MarketConsumer
 from apps.strategy.consumers import StrategyLogConsumer
 from apps.trading.consumers import TradeConsumer
 
 websocket_urlpatterns = [
     re_path(r"^ws/market/(?P<symbol>[\w-]+)$", MarketConsumer.as_asgi()),
+    re_path(r"^ws/depth/(?P<symbol>[\w-]+)$", DepthConsumer.as_asgi()),
     re_path(
         r"^ws/trade/(?P<user_id>\d+)/(?P<env>\w+)$",
         TradeConsumer.as_asgi(),

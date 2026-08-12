@@ -132,6 +132,20 @@ def log(request):
     return Response({"ok": True})
 
 
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def heartbeat(request):
+    run = _run_from_token(request)
+    if not run:
+        return Response({"detail": "invalid run token"}, status=403)
+    from django.utils import timezone
+
+    run.last_heartbeat = timezone.now()
+    run.save(update_fields=["last_heartbeat"])
+    return Response({"ok": True})
+
+
 def _infer_level(msg: str) -> str:
     """无显式 level 时按关键词推断,供前端着色。"""
     u = str(msg).upper()

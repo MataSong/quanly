@@ -13,8 +13,9 @@ ENV_FILE=".env.prod"
 
 # ============================ 策略运行器镜像 ============================
 # celery-worker 通过挂载 docker.sock 动态启动策略容器,镜像名固定 quanly-strategy-runner
-# (与 docker-compose.yml 的 STRATEGY_RUNNER_IMAGE 一致)。它不在 compose services 里,
-# 不会被 compose 自动构建,必须单独 build,否则页面启动策略会 404: pull access denied。
+# (与 docker-compose.yml 的 STRATEGY_RUNNER_IMAGE 一致)。
+# 该镜像现已由 compose 服务 strategy-runner-build 负责构建(随 up --build 一并构建),
+# 下面的 build_strategy_runner() 保留为兜底:无 compose 缓存/单独重建镜像时仍可调用。
 STRATEGY_RUNNER_IMAGE="quanly-strategy-runner"
 
 build_strategy_runner() {
@@ -121,6 +122,11 @@ hot_update() {
 
   # 7) 清理
   docker image prune -f >/dev/null 2>&1 || true
+
+  # 8) 策略容器(quanly-strategy-*)不在 compose services 内,全量重建不会 recreate 它们,
+  #    升级期间保持运行(restart_policy=unless-stopped),实现"运行中策略零中断"。
+  RUNNING_STRATEGIES=$(docker ps --filter "name=quanly-strategy-" --format '{{.Names}}' | wc -l | tr -d ' ')
+  say "运行中策略容器数: ${RUNNING_STRATEGIES}(升级不影响其运行)。"
   say "热更新完成,刷新浏览器即可。"
 }
 

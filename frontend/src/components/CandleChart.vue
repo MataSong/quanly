@@ -3,15 +3,17 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   createChart,
   CandlestickSeries,
+  LineSeries,
   type IChartApi,
   type ISeriesApi,
   type CandlestickData,
+  type LineData,
   type UTCTimestamp,
 } from "lightweight-charts";
 import client from "@/api/client";
 import { useI18n } from "vue-i18n";
 
-const props = defineProps<{ symbol: string; bar?: string }>();
+const props = defineProps<{ symbol: string; bar?: string; indicators?: string[] }>();
 const { t: $t } = useI18n();
 
 const container = ref<HTMLDivElement | null>(null);
@@ -20,6 +22,91 @@ let chart: IChartApi | null = null;
 let series: ISeriesApi<"Candlestick"> | null = null;
 let ws: WebSocket | null = null;
 let lastTime = 0; // 最近一根 bar 的秒级时间戳,保证 update 时间单调不倒退
+let closes: { time: number; close: number }[] = []; // 供指标计算
+const overlays = new Map<string, ISeriesApi<"Line">>();
+
+const IND_COLORS: Record<string, string> = {
+  ma7: "#f5a623", ma25: "#4a9eff", ema12: "#bd10e0",
+  boll_up: "#8e8e93", boll_mid: "#8e8e93", boll_low: "#8e8e93",
+};
+
+function sma(data: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) {
+    sum += data[i];
+    if (i >= period) sum -= data[i - period];
+    out.push(i >= period - 1 ? sum / period : null);
+  }
+  return out;
+}
+
+function ema(data: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  const k = 2 / (period + 1);
+  let prev: number | null = null;
+  for (let i = 0; i < data.length; i++) {
+    if (prev === null) prev = data[i];
+    else prev = data[i] * k + prev * (1 - k);
+    out.push(i >= period - 1 ? prev : null);
+  }
+  return out;
+}
+
+function toLine(values: (number | null)[]): LineData[] {
+  const out: LineData[] = [];
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] != null)
+      out.push({ time: closes[i].time as UTCTimestamp, value: values[i] as number });
+  }
+  return out;
+}
+
+function clearOverlays() {
+  for (const s of overlays.values()) chart?.removeSeries(s);
+  overlays.clear();
+}
+
+function addOverlay(key: string, data: LineData[]) {
+  if (!chart) return;
+  const line = chart.addSeries(LineSeries, {
+    color: IND_COLORS[key] || "#888", lineWidth: 1, priceLineVisible: false,
+    lastValueVisible: false,
+  });
+  line.setData(data);
+  overlays.set(key, line);
+}
+
+function applyIndicators() {
+  if (!chart || closes.length === 0) return;
+  clearOverlays();
+  const inds = props.indicators || [];
+  const arr = closes.map((c) => c.close);
+  if (inds.includes("ma7")) addOverlay("ma7", toLine(sma(arr, 7)));
+  if (inds.includes("ma25")) addOverlay("ma25", toLine(sma(arr, 25)));
+  if (inds.includes("ema12")) addOverlay("ema12", toLine(ema(arr, 12)));
+  if (inds.includes("boll")) {
+    const period = 20;
+    const mid = sma(arr, period);
+    const up: (number | null)[] = [];
+    const low: (number | null)[] = [];
+    for (let i = 0; i < arr.length; i++) {
+      if (i >= period - 1 && mid[i] != null) {
+        const slice = arr.slice(i - period + 1, i + 1);
+        const m = mid[i] as number;
+        const sd = Math.sqrt(slice.reduce((a, b) => a + (b - m) ** 2, 0) / period);
+        up.push(m + 2 * sd);
+        low.push(m - 2 * sd);
+      } else {
+        up.push(null);
+        low.push(null);
+      }
+    }
+    addOverlay("boll_up", toLine(up));
+    addOverlay("boll_mid", toLine(mid));
+    addOverlay("boll_low", toLine(low));
+  }
+}
 
 function themeColors() {
   const dark = document.documentElement.dataset.theme !== "light";
@@ -56,6 +143,8 @@ async function loadHistory() {
   lastTime = data.length ? (data[data.length - 1].time as number) : 0;
   empty.value = data.length === 0;
   series?.setData(data);
+  closes = data.map((d) => ({ time: d.time as number, close: d.close }));
+  applyIndicators();
   chart?.timeScale().fitContent();
 }
 
@@ -136,6 +225,12 @@ onMounted(() => {
 watch(
   () => [props.symbol, props.bar],
   () => reset()
+);
+
+watch(
+  () => props.indicators,
+  () => applyIndicators(),
+  { deep: true }
 );
 
 onBeforeUnmount(() => {

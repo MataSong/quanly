@@ -11,6 +11,13 @@ urlpatterns = [
     path("strategy-runs", views.list_runs),
     path("strategy-runs/<int:pk>/stop", views.stop_strategy),
     path("strategy-runs/<int:pk>/logs", views.run_logs),
+    path("strategy/tasks/batch-run", views.batch_run),
+    path("strategy/tasks", views.tasks_overview),
+    path("strategy/tasks/batch-stop", views.batch_stop),
+    path("strategy/visual/schemas", views.visual_schemas),
+    path("strategy/visual/preview", views.visual_preview),
+    path("strategy/code/validate", views.code_validate),
+    path("strategy/code/dryrun", views.code_dryrun),
     # 策略容器专用 API(RUN_TOKEN 鉴权)
     path("strategy-api/market", runner_api.market),
     path("strategy-api/candles", runner_api.candles),
@@ -18,4 +25,5 @@ urlpatterns = [
     path("strategy-api/balances", runner_api.balances),
     path("strategy-api/order", runner_api.order),
     path("strategy-api/log", runner_api.log),
+    path("strategy-api/heartbeat", runner_api.heartbeat),
 ] + router.urls
