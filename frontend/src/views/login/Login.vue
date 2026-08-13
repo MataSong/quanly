@@ -13,7 +13,7 @@
           <div class="brand-sub">{{ t("login.subtitle") }}</div>
         </div>
       </div>
-      <h2>{{ t("login.submit") }}</h2>
+      <h2>{{ t("login.cardTitle") }}</h2>
       <el-form :model="form" @submit.prevent="onSubmit">
         <div class="field" :class="{ 'has-value': form.username }"
              :style="{ '--label-w': usernameLabelW + 'px' }">

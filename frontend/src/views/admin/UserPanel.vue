@@ -252,7 +252,7 @@ function openCreate() {
 async function onCreate() {
   if (createForm.authSource === "local") {
     if (!checkRules(createForm.password).valid) {
-      ElMessage.error(t("admin.users.passwordTooShort")); return;
+      ElMessage.error(t("admin.users.passwordTooWeak")); return;
     }
     if (createForm.password !== createForm.password2) {
       ElMessage.error(t("admin.users.passwordMismatch")); return;
@@ -346,7 +346,7 @@ function onResetPassword(row: AdminUser) {
 async function onResetSubmit() {
   if (!resetTarget.value) return;
   if (!checkRules(resetForm.password).valid) {
-    ElMessage.error(t("admin.users.passwordTooShort")); return;
+    ElMessage.error(t("admin.users.passwordTooWeak")); return;
   }
   if (resetForm.password !== resetForm.password2) {
     ElMessage.error(t("admin.users.passwordMismatch")); return;

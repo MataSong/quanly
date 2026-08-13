@@ -36,6 +36,7 @@ const en: typeof zh = {
   },
   login: {
     title: "Quanly Trading Platform",
+    cardTitle: "Sign In",
     subtitle: "Welcome back, please sign in",
     username: "Username",
     usernamePlaceholder: "Enter your username",
@@ -110,6 +111,7 @@ const en: typeof zh = {
       confirmPassword: "Confirm password",
       passwordMismatch: "Passwords do not match",
       passwordTooShort: "Password must be at least 8 characters",
+      passwordTooWeak: "Password too weak (≥8 chars and at least 3 of: uppercase/lowercase/digit/special)",
       delete: "Delete",
       deleteConfirm: "Delete user \"{name}\"?",
       toggleStatus: "Toggle status",
@@ -177,6 +179,7 @@ const en: typeof zh = {
     title: "Create account",
     subtitle: "Sign up to get started",
     username: "Username",
+    usernameRequired: "Username is required",
     email: "Email (optional)",
     password: "Password",
     confirmPassword: "Confirm password",

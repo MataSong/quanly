@@ -106,7 +106,7 @@ watch(locale, async () => {
 
 async function onSubmit() {
   error.value = "";
-  if (!form.username) { error.value = t("login.usernameRequired"); return; }
+  if (!form.username) { error.value = t("register.usernameRequired"); return; }
   const rules = checkRules(form.password);
   if (!rules.valid) { error.value = t("register.weakPassword"); return; }
   if (form.password !== form.password2) { error.value = t("register.passwordMismatch"); return; }

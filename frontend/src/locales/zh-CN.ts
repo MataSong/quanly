@@ -34,6 +34,7 @@ export default {
   },
   login: {
     title: "量化交易平台",
+    cardTitle: "登录",
     subtitle: "欢迎回来，请登录",
     username: "用户名",
     usernamePlaceholder: "请输入用户名",
@@ -108,6 +109,7 @@ export default {
       confirmPassword: "确认密码",
       passwordMismatch: "两次密码不一致",
       passwordTooShort: "密码至少 8 位",
+      passwordTooWeak: "密码强度不足（至少 8 位，且含大写/小写/数字/特殊字符中的 3 类）",
       delete: "删除",
       deleteConfirm: "确定删除用户「{name}」？",
       toggleStatus: "切换状态",
@@ -175,6 +177,7 @@ export default {
     title: "创建账号",
     subtitle: "注册后即可开始使用",
     username: "用户名",
+    usernameRequired: "用户名不能为空",
     email: "邮箱（可选）",
     password: "密码",
     confirmPassword: "确认密码",
