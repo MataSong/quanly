@@ -159,7 +159,7 @@ def _make_access_token(user) -> str:
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_ws_no_token_closes_4001():
-    """Connection without token should be closed with code 4001."""
+    """Connection without token should be rejected with close code 4001."""
     from channels.testing import WebsocketCommunicator
     from config.asgi import application
 
@@ -167,23 +167,17 @@ async def test_ws_no_token_closes_4001():
         application,
         "/ws/market/BTC-USDT/",  # no token
     )
-    connected, subprotocol = await communicator.connect()
-    # Either refused to connect or accepted then immediately closed
-    if connected:
-        # Should close shortly with 4001
-        msg = await communicator.receive_output(timeout=2)
-        assert msg["type"] == "websocket.close"
-        assert msg.get("code") == 4001
-    else:
-        # connect() itself returned False
-        assert not connected
+    # consumer 在 accept 前 close(4001) → connect() 返回 (False, 4001)
+    connected, close_code = await communicator.connect()
+    assert connected is False
+    assert close_code == 4001
     await communicator.disconnect()
 
 
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_ws_invalid_token_closes_4001():
-    """Connection with a bogus token should be closed with code 4001."""
+    """Connection with a bogus token should be rejected with close code 4001."""
     from channels.testing import WebsocketCommunicator
     from config.asgi import application
 
@@ -191,13 +185,9 @@ async def test_ws_invalid_token_closes_4001():
         application,
         "/ws/market/BTC-USDT/?token=notavalidjwt",
     )
-    connected, subprotocol = await communicator.connect()
-    if connected:
-        msg = await communicator.receive_output(timeout=2)
-        assert msg["type"] == "websocket.close"
-        assert msg.get("code") == 4001
-    else:
-        assert not connected
+    connected, close_code = await communicator.connect()
+    assert connected is False
+    assert close_code == 4001
     await communicator.disconnect()
 
 

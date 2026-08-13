@@ -19,6 +19,7 @@ import time
 
 from asgiref.sync import async_to_sync
 from django.core.management.base import BaseCommand
+from core.market.consumers import _sanitize_symbol
 
 logger = logging.getLogger("quanly.market")
 
@@ -74,7 +75,8 @@ async def _run(symbols: list[str], bar: str) -> None:
                         continue
 
                     inst_id = arg.get("instId", "")
-                    group_name = f"market_{inst_id}"
+                    # 与 consumer 侧一致地 sanitize,保证 group 名两端匹配且不含非法字符。
+                    group_name = f"market_{_sanitize_symbol(inst_id)}"
 
                     for row in data_rows:
                         if len(row) < 6:

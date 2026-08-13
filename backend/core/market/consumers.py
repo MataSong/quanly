@@ -9,7 +9,9 @@ Authentication:
 Group naming: market_<symbol>  (e.g. market_BTC-USDT)
 The run_market_collector management command broadcasts to these groups.
 """
+import json
 import logging
+import re
 from urllib.parse import parse_qs
 
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -19,7 +21,6 @@ logger = logging.getLogger("quanly.market")
 
 def _sanitize_symbol(symbol: str) -> str:
     """Keep only safe chars for channel-layer group names."""
-    import re
     return re.sub(r"[^A-Za-z0-9_\-]", "", symbol)[:50]
 
 
@@ -67,7 +68,6 @@ class MarketConsumer(AsyncWebsocketConsumer):
         The collector sends:
             {"type": "market.update", "symbol": "...", "candle": {...}}
         """
-        import json
         await self.send(text_data=json.dumps({
             "type": "market_update",
             "symbol": event.get("symbol"),

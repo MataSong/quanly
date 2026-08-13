@@ -5,32 +5,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from core.accounts.drf import HasRequiredPermissions
+from core.accounts.drf import require_perm
 from . import okx_client
 
 logger = logging.getLogger("quanly.market")
 
 
-class _MarketViewMixin:
-    permission_classes = [IsAuthenticated, HasRequiredPermissions]
-    required_permissions = ["market:view"]
-
-
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, HasRequiredPermissions])
+@permission_classes([IsAuthenticated])
 def candles_view(request: Request) -> Response:
     """GET /api/market/candles?symbol=BTC-USDT&bar=1m&limit=100
 
     Returns historical K-line data for chart initialisation.
     Requires permission: market:view
     """
-    # Manual permission check (function-based views don't run class-based required_permissions)
-    from core.accounts.services import get_effective_permissions_cached
-    if not request.user.is_superuser:
-        effective = get_effective_permissions_cached(request)
-        if "market:view" not in effective:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("缺少权限: market:view")
+    # 函数视图不走类视图的 required_permissions,用命令式 require_perm 校验。
+    require_perm(request, "market:view")
 
     symbol = request.query_params.get("symbol", "BTC-USDT")
     bar = request.query_params.get("bar", "1m")
@@ -50,19 +40,14 @@ def candles_view(request: Request) -> Response:
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, HasRequiredPermissions])
+@permission_classes([IsAuthenticated])
 def symbols_view(request: Request) -> Response:
     """GET /api/market/symbols
 
     Returns list of live SPOT instruments.
     Requires permission: market:view
     """
-    from core.accounts.services import get_effective_permissions_cached
-    if not request.user.is_superuser:
-        effective = get_effective_permissions_cached(request)
-        if "market:view" not in effective:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("缺少权限: market:view")
+    require_perm(request, "market:view")
 
     try:
         data = okx_client.get_spot_symbols()
