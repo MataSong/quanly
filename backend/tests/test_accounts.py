@@ -165,6 +165,20 @@ def test_has_required_permissions_dict_method_specific_post_denied():
 
 
 @pytest.mark.django_db
+def test_has_required_permissions_dict_method_not_in_keys_allowed():
+    """Dict 模式下,请求方法不在 keys 里时(如 PUT)走空元组回退 -> 放通。
+    这是刻意的宽松回退:未声明的方法视为无权限要求。"""
+    u = User.objects.create_user("nokeyuser", password="pw")
+    factory = APIRequestFactory()
+    request = factory.put("/")
+    request.user = u
+    view = _MethodSpecificView()  # 只声明了 GET/POST,没有 PUT
+    permission = HasRequiredPermissions()
+    assert permission.has_permission(request, view) is True
+
+
+
+@pytest.mark.django_db
 def test_require_perm_granted():
     """require_perm should not raise when user has permission."""
     u = User.objects.create_user("user", password="pw")
