@@ -17,6 +17,7 @@ frontend_dist/
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # 环境变量(含密钥,绝不入库)
 .env
