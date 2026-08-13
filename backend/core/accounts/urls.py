@@ -1,4 +1,14 @@
 from django.urls import path
+from rest_framework.routers import DefaultRouter
 
-# Placeholder — 用户/角色管理路由在 Task 5 实现(RBAC 模型在 Task 2)
-urlpatterns = []
+from core.accounts.views import (
+    PermissionsListView, RoleViewSet, UserViewSet,
+)
+
+router = DefaultRouter()
+router.register("roles", RoleViewSet, basename="role")
+router.register("users", UserViewSet, basename="user")
+
+urlpatterns = [
+    path("permissions/", PermissionsListView.as_view(), name="permissions"),
+] + router.urls
