@@ -35,3 +35,12 @@ def test_invalid_permission_code_filtered_out():
     role = Role.objects.create(name="x", permissions=["page:dashboard", "bogus:perm"])
     UserRole.objects.create(user=u, role=role)
     assert "bogus:perm" not in get_effective_permissions(u)
+
+@pytest.mark.django_db
+def test_grant_override_cannot_introduce_invalid_code():
+    # 回归保护:grant 一个不在 ALL_PERMISSION_CODES 里的权限码,
+    # 必须被最终的交集过滤掉(否则任何人都能通过 override 越权)。
+    u = User.objects.create_user("dave", password="pw")
+    UserPermissionOverride.objects.create(user=u, permission="bogus:grant", effect="grant")
+    assert "bogus:grant" not in get_effective_permissions(u)
+
