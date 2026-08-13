@@ -64,8 +64,10 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        user.set_password(password)
-        user.save(update_fields=["password"])
+        # 只在首次创建时设密码,避免每次容器重启覆盖运维手动改过的密码。
+        if created:
+            user.set_password(password)
+            user.save(update_fields=["password"])
 
         # 确保 UserProfile 存在
         UserProfile.objects.get_or_create(
