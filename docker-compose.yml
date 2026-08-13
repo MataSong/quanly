@@ -60,6 +60,32 @@ services:
     #   command: celery -A config worker -l info
     #   depends_on: [backend, redis]
 
+  # ---- Market Collector — OKX WS 行情采集 ----
+  market-collector:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: python manage.py run_market_collector
+    environment:
+      QUANLY_ENV: ${QUANLY_ENV:-prod}
+      QUANLY_SECRET_KEY: ${QUANLY_SECRET_KEY}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-quanly}
+      POSTGRES_USER: ${POSTGRES_USER:-quanly}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      OKX_FLAG: ${OKX_FLAG:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
   # ---- Frontend + nginx（反代） ----
   nginx:
     build:

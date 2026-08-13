@@ -10,3 +10,6 @@ channels>=4
 channels-redis>=4
 daphne>=4
 redis>=5
+python-okx>=0.3
+websockets>=12
+pytest-asyncio>=0.23

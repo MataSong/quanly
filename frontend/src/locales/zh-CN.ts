@@ -61,6 +61,7 @@ export default {
       users: "用户管理",
       roles: "角色管理",
       credentials: "密钥管理",
+      market: "行情",
     },
   },
   dashboard: {
@@ -233,5 +234,17 @@ export default {
     },
     duplicate_label: "该环境下已存在同名标签",
     permission_denied: "无权限操作密钥",
+  },
+  market: {
+    title: "行情",
+    symbolPlaceholder: "选择交易对",
+    statusConnected: "实时连接",
+    statusDisconnected: "未连接",
+    errorLoad: "行情加载失败",
+    errorAuth: "WS 鉴权失败",
+    errorWs: "WebSocket 连接错误",
+    bar: {
+      label: "周期",
+    },
   },
 };

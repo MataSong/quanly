@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "core.accounts",
     "core.audit",
     "core.credentials",
+    "core.market",
 ]
 
 MIDDLEWARE = [

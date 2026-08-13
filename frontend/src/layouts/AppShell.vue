@@ -84,6 +84,7 @@ import {
   Grid,
   Key,
   Setting,
+  TrendCharts,
 } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
@@ -118,6 +119,7 @@ const navItems = computed<NavItem[]>(() =>
       { to: "/dashboard", icon: Grid, label: t("layout.nav.dashboard"), perm: "page:dashboard" },
       { to: "/admin", icon: Setting, label: t("layout.nav.admin"), perm: "page:admin" },
       { to: "/credentials", icon: Key, label: t("layout.nav.credentials"), perm: "page:credentials" },
+      { to: "/market", icon: TrendCharts, label: t("layout.nav.market"), perm: "page:market" },
     ] as NavItem[]
   ).filter((i) => auth.hasPerm(i.perm)),
 );

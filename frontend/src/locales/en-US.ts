@@ -63,6 +63,7 @@ const en: typeof zh = {
       users: "Users",
       roles: "Roles",
       credentials: "Credentials",
+      market: "Market",
     },
   },
   dashboard: {
@@ -235,6 +236,18 @@ const en: typeof zh = {
     },
     duplicate_label: "A credential with this label already exists in this environment",
     permission_denied: "You do not have permission to manage credentials",
+  },
+  market: {
+    title: "Market",
+    symbolPlaceholder: "Select symbol",
+    statusConnected: "Live",
+    statusDisconnected: "Disconnected",
+    errorLoad: "Failed to load market data",
+    errorAuth: "WS authentication failed",
+    errorWs: "WebSocket connection error",
+    bar: {
+      label: "Interval",
+    },
   },
 };
 
