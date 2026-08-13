@@ -6,3 +6,7 @@ django-cors-headers>=4.3
 cryptography>=42
 pytest>=8
 pytest-django>=4.8
+channels>=4
+channels-redis>=4
+daphne>=4
+redis>=5

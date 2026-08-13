@@ -46,7 +46,8 @@ services:
       QUANLY_ADMIN_USER: ${QUANLY_ADMIN_USER:-admin}
       QUANLY_ADMIN_PASSWORD: ${QUANLY_ADMIN_PASSWORD}
       QUANLY_ADMIN_EMAIL: ${QUANLY_ADMIN_EMAIL:-admin@quanly.local}
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres:
         condition: service_healthy

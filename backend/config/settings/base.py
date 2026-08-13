@@ -10,6 +10,8 @@ DEBUG = False
 ALLOWED_HOSTS = os.environ.get("QUANLY_ALLOWED_HOSTS", "localhost").split(",")
 
 INSTALLED_APPS = [
+    "daphne",      # must be first — overrides runserver with ASGI
+    "channels",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -40,6 +42,19 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [(
+                os.environ.get("REDIS_HOST", "localhost"),
+                int(os.environ.get("REDIS_PORT", 6379)),
+            )],
+        },
+    },
+}
 
 FRONTEND_DIST = BASE_DIR / "frontend_dist"
 
