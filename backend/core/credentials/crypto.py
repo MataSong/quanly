@@ -17,10 +17,6 @@ import os
 
 from cryptography.fernet import Fernet, InvalidToken
 
-# Dev-only static fallback key — DO NOT use in production.
-# This is a valid Fernet key for local development convenience.
-_DEV_FALLBACK_KEY = b"DEV_KEY_REPLACE_ME_IN_PROD_AAAAA="  # placeholder shape
-
 # Build a real valid key for dev fallback (generated once, constant for dev).
 # This is intentionally a fixed key so dev restarts don't break existing encrypted data.
 _DEV_STATIC_FERNET_KEY = b"T2txcS1kZXYtZmFsbGJhY2sta2V5LTMyYnl0ZXMhISE="

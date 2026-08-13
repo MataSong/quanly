@@ -41,7 +41,7 @@
     </el-table>
 
     <!-- 新建密钥 dialog -->
-    <el-dialog v-model="createVisible" :title="t('credentials.create')" width="480px">
+    <el-dialog v-model="createVisible" :title="t('credentials.create')" width="480px" destroy-on-close>
       <el-form label-width="110px">
         <el-form-item :label="t('credentials.form.env')">
           <el-select v-model="form.env" style="width: 100%;">
@@ -55,6 +55,8 @@
         <el-form-item :label="t('credentials.form.apiKey')">
           <el-input
             v-model="form.api_key"
+            type="password"
+            show-password
             :placeholder="t('credentials.form.apiKeyPlaceholder')"
           />
         </el-form-item>

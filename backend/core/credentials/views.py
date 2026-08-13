@@ -16,17 +16,17 @@ class CredentialViewSet(viewsets.ModelViewSet):
     """
 
     permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    # 密钥不支持编辑,只能删除后重建 —— 禁用 PUT/PATCH(否则 WriteSerializer 无 update() 会 500)。
+    http_method_names = ["get", "post", "delete", "head", "options"]
     required_permissions = {
         "GET": ["credentials:view"],
         "POST": ["credentials:manage"],
-        "PUT": ["credentials:manage"],
-        "PATCH": ["credentials:manage"],
         "DELETE": ["credentials:manage"],
     }
 
     # Serializer selection: different serializers for read vs write.
     def get_serializer_class(self):
-        if self.request.method in ("POST", "PUT", "PATCH"):
+        if self.request.method == "POST":
             return CredentialWriteSerializer
         return CredentialReadSerializer
 
