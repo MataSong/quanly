@@ -333,7 +333,7 @@ def test_reset_password_ok(api_client):
     u = User.objects.create_user("target_pw2", password="pw123456")
     api_client.force_authenticate(su)
     resp = api_client.post(f"/api/accounts/users/{u.id}/reset_password/",
-                           {"password": "newpassword1"}, format="json")
+                           {"password": "NewPassword1"}, format="json")
     assert resp.status_code == 200
     assert resp.data["data"]["ok"] is True
 

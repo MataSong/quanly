@@ -1,6 +1,8 @@
 import pytest
 from django.contrib.auth.models import User
 
+from core.accounts.services import get_effective_permissions
+
 
 @pytest.mark.django_db
 def test_login_returns_tokens_and_permissions(api_client):
@@ -110,3 +112,109 @@ def test_login_user_data_structure(api_client):
     assert "permissions" in user_data
     assert "auth_source" in user_data
     assert isinstance(user_data["permissions"], list)
+
+
+# === 注册 API 测试(批次 A) ===
+
+REGISTER_URL = "/api/auth/register/"
+# 满足强度规则的密码:大写+小写+数字 = 3类,长度>=8
+STRONG_PASS = "Abcdef1!"
+
+
+@pytest.mark.django_db
+def test_register_success_returns_tokens_and_user(api_client):
+    """成功注册:返回 201,含 access/refresh/user,user.permissions 含 page:dashboard。"""
+    resp = api_client.post(
+        REGISTER_URL,
+        {"username": "newuser", "password": STRONG_PASS},
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert "access" in resp.data
+    assert "refresh" in resp.data
+    user_data = resp.data["user"]
+    assert user_data["username"] == "newuser"
+    assert user_data["is_superuser"] is False
+    assert "page:dashboard" in user_data["permissions"]
+    assert user_data["auth_source"] == "local"
+
+
+@pytest.mark.django_db
+def test_register_duplicate_username_returns_400(api_client):
+    """重复用户名注册返回 400,code=user_exists。"""
+    User.objects.create_user("taken", password="pw123456")
+    resp = api_client.post(
+        REGISTER_URL,
+        {"username": "taken", "password": STRONG_PASS},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.data["code"] == "user_exists"
+
+
+@pytest.mark.django_db
+def test_register_weak_password_returns_400(api_client):
+    """弱密码(如 'abc')注册返回 400,code=weak_password。"""
+    resp = api_client.post(
+        REGISTER_URL,
+        {"username": "weakuser", "password": "abc"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.data["code"] == "weak_password"
+
+
+@pytest.mark.django_db
+def test_register_missing_username_returns_400(api_client):
+    """缺少 username 返回 400,code=bad_request。"""
+    resp = api_client.post(
+        REGISTER_URL,
+        {"password": STRONG_PASS},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.data["code"] == "bad_request"
+
+
+@pytest.mark.django_db
+def test_register_user_gets_dashboard_permission(api_client):
+    """注册后新用户 get_effective_permissions 能解析出 page:dashboard。"""
+    resp = api_client.post(
+        REGISTER_URL,
+        {"username": "dashuser", "password": STRONG_PASS},
+        format="json",
+    )
+    assert resp.status_code == 201
+    user = User.objects.get(username="dashuser")
+    perms = get_effective_permissions(user)
+    assert "page:dashboard" in perms
+
+
+@pytest.mark.django_db
+def test_register_with_email(api_client):
+    """注册时可选传入 email,注册成功。"""
+    resp = api_client.post(
+        REGISTER_URL,
+        {"username": "emailuser", "password": STRONG_PASS, "email": "e@example.com"},
+        format="json",
+    )
+    assert resp.status_code == 201
+    user = User.objects.get(username="emailuser")
+    assert user.email == "e@example.com"
+
+
+@pytest.mark.django_db
+def test_register_idempotent_user_role_creation(api_client):
+    """连续注册两个不同用户,user 角色只存在一份。"""
+    api_client.post(
+        REGISTER_URL,
+        {"username": "user_a", "password": STRONG_PASS},
+        format="json",
+    )
+    api_client.post(
+        REGISTER_URL,
+        {"username": "user_b", "password": STRONG_PASS},
+        format="json",
+    )
+    from core.accounts.models import Role
+    assert Role.objects.filter(name="user").count() == 1

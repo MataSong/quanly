@@ -13,6 +13,7 @@ from core.accounts.permissions_registry import PERMISSION_GROUPS
 from core.accounts.serializers import (
     RoleSerializer, AdminUserSerializer, OverrideSerializer,
 )
+from core.auth.password_rules import validate_password_strength
 
 
 class IsSuperUser(BasePermission):
@@ -91,9 +92,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         password = request.data.get("password") or ""
-        if len(password) < 8:
+        ok, msg = validate_password_strength(password)
+        if not ok:
             return Response(
-                {"code": "weak_password", "message": "password too short"},
+                {"code": "weak_password", "message": msg},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         user = User.objects.create_user(
@@ -128,9 +130,10 @@ class UserViewSet(viewsets.ModelViewSet):
     def reset_password(self, request, pk=None):
         user = self.get_object()
         password = request.data.get("password") or ""
-        if len(password) < 8:
+        ok, msg = validate_password_strength(password)
+        if not ok:
             return Response(
-                {"code": "weak_password", "message": "password too short"},
+                {"code": "weak_password", "message": msg},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         user.set_password(password)

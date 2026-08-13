@@ -22,6 +22,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self._seed_admin_role()
+        self._seed_user_role()
         self._seed_admin_user()
 
     def _seed_admin_role(self):
@@ -38,6 +39,28 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"{verb} system role 'admin' with {len(all_perms)} permissions."
+            )
+        )
+        return role
+
+    def _seed_user_role(self):
+        """确保 is_system=True 的 user 角色存在,含 page:dashboard 权限。"""
+        role, created = Role.objects.get_or_create(
+            name="user",
+            defaults={
+                "description": "普通用户",
+                "permissions": ["page:dashboard"],
+                "is_system": True,
+            },
+        )
+        # 若已存在但 is_system 尚未标记,修正之
+        if not created and not role.is_system:
+            role.is_system = True
+            role.save(update_fields=["is_system"])
+        verb = "Created" if created else "Already exists"
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"{verb}: system role 'user' (page:dashboard)."
             )
         )
         return role
