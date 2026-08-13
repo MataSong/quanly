@@ -4,6 +4,7 @@ from django.db import models
 
 class Role(models.Model):
     name = models.CharField(max_length=64, unique=True)
+    description = models.CharField(max_length=255, blank=True, default="")
     permissions = models.JSONField(default=list)
     is_system = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

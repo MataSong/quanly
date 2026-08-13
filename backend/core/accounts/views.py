@@ -9,7 +9,7 @@ from core.audit.decorators import audit
 from core.accounts.models import (
     Role, UserRole, UserPermissionOverride, UserProfile,
 )
-from core.accounts.permissions_registry import PERMISSIONS
+from core.accounts.permissions_registry import PERMISSION_GROUPS
 from core.accounts.serializers import (
     RoleSerializer, AdminUserSerializer, OverrideSerializer,
 )
@@ -24,7 +24,7 @@ class PermissionsListView(APIView):
     permission_classes = [IsAuthenticated, IsSuperUser]
 
     def get(self, request):
-        return Response({"data": PERMISSIONS})
+        return Response({"data": PERMISSION_GROUPS})
 
 
 class RoleViewSet(viewsets.ModelViewSet):

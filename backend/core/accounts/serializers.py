@@ -8,7 +8,7 @@ from core.accounts.permissions_registry import ALL_PERMISSION_CODES
 class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
-        fields = ["id", "name", "permissions", "is_system", "created_at"]
+        fields = ["id", "name", "description", "permissions", "is_system", "created_at"]
         read_only_fields = ["is_system", "created_at"]
 
     def validate_permissions(self, value):
