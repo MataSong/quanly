@@ -49,6 +49,15 @@ export const useAuthStore = defineStore("auth", {
       this.setTokens(resp.data.access, resp.data.refresh);
       this.setUser(resp.data.user);
     },
+    async register(username: string, password: string, email?: string) {
+      const resp = await http.post<{
+        access: string;
+        refresh: string;
+        user: UserInfo;
+      }>("/auth/register/", { username, password, ...(email ? { email } : {}) });
+      this.setTokens(resp.data.access, resp.data.refresh);
+      this.setUser(resp.data.user);
+    },
     async logout() {
       try {
         if (this.refresh) {

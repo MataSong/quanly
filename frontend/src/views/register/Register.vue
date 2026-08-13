@@ -10,21 +10,33 @@
         <BrandLogo :size="40" variant="light" />
         <div class="brand-text">
           <div class="brand-title">{{ t("login.title") }}</div>
-          <div class="brand-sub">{{ t("login.subtitle") }}</div>
+          <div class="brand-sub">{{ t("register.subtitle") }}</div>
         </div>
       </div>
-      <h2>{{ t("login.submit") }}</h2>
+      <h2>{{ t("register.title") }}</h2>
       <el-form :model="form" @submit.prevent="onSubmit">
         <div class="field" :class="{ 'has-value': form.username }"
              :style="{ '--label-w': usernameLabelW + 'px' }">
           <el-input v-model="form.username" autofocus autocomplete="username" />
-          <label ref="usernameLabelEl">{{ t("login.username") }}</label>
+          <label ref="usernameLabelEl">{{ t("register.username") }}</label>
+        </div>
+        <div class="field" :class="{ 'has-value': form.email }"
+             :style="{ '--label-w': emailLabelW + 'px' }">
+          <el-input v-model="form.email" type="email" autocomplete="email" />
+          <label ref="emailLabelEl">{{ t("register.email") }}</label>
         </div>
         <div class="field" :class="{ 'has-value': form.password }"
              :style="{ '--label-w': passwordLabelW + 'px' }">
           <el-input v-model="form.password" type="password" show-password
-                    autocomplete="current-password" @keyup.enter="onSubmit" />
-          <label ref="passwordLabelEl">{{ t("login.password") }}</label>
+                    autocomplete="new-password" />
+          <label ref="passwordLabelEl">{{ t("register.password") }}</label>
+        </div>
+        <PasswordStrength :password="form.password" class="strength-widget" />
+        <div class="field" :class="{ 'has-value': form.password2 }"
+             :style="{ '--label-w': password2LabelW + 'px' }">
+          <el-input v-model="form.password2" type="password" show-password
+                    autocomplete="new-password" />
+          <label ref="password2LabelEl">{{ t("register.confirmPassword") }}</label>
         </div>
         <el-button
           type="primary"
@@ -33,12 +45,12 @@
           class="submit-btn"
           @click="onSubmit"
         >
-          {{ t("login.submit") }}
+          {{ t("register.submit") }}
         </el-button>
         <div v-if="error" class="error">{{ error }}</div>
       </el-form>
       <div class="footer-link">
-        <router-link to="/register">{{ t("login.goRegister") }}</router-link>
+        <router-link to="/login">{{ t("register.goLogin") }}</router-link>
       </div>
     </div>
     <div class="login-footer">v0.2.0 · © 2026</div>
@@ -47,37 +59,42 @@
 
 <script setup lang="ts">
 import { reactive, ref, onMounted, nextTick, watch } from "vue";
-import { useRouter, useRoute } from "vue-router";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
+import { checkRules } from "@/utils/password";
 import LocaleSwitcher from "@/components/LocaleSwitcher.vue";
 import BrandLogo from "@/components/BrandLogo.vue";
+import PasswordStrength from "@/components/PasswordStrength.vue";
 
 const { t, locale } = useI18n();
-const form = reactive({ username: "", password: "" });
+const form = reactive({ username: "", email: "", password: "", password2: "" });
 const loading = ref(false);
 const error = ref("");
 const router = useRouter();
-const route = useRoute();
 const auth = useAuthStore();
 
 const usernameLabelEl = ref<HTMLElement | null>(null);
+const emailLabelEl = ref<HTMLElement | null>(null);
 const passwordLabelEl = ref<HTMLElement | null>(null);
+const password2LabelEl = ref<HTMLElement | null>(null);
 const usernameLabelW = ref(0);
+const emailLabelW = ref(0);
 const passwordLabelW = ref(0);
+const password2LabelW = ref(0);
 
 function measureLabels() {
   const scale = 12 / 14;
-  if (usernameLabelEl.value) {
-    usernameLabelW.value = Math.ceil(usernameLabelEl.value.offsetWidth * scale) + 8;
+  function m(el: HTMLElement | null, target: { value: number }) {
+    if (el) target.value = Math.ceil(el.offsetWidth * scale) + 8;
   }
-  if (passwordLabelEl.value) {
-    passwordLabelW.value = Math.ceil(passwordLabelEl.value.offsetWidth * scale) + 8;
-  }
+  m(usernameLabelEl.value, usernameLabelW);
+  m(emailLabelEl.value, emailLabelW);
+  m(passwordLabelEl.value, passwordLabelW);
+  m(password2LabelEl.value, password2LabelW);
 }
 
 onMounted(async () => {
-  auth.clear();
   await nextTick();
   measureLabels();
 });
@@ -89,25 +106,27 @@ watch(locale, async () => {
 
 async function onSubmit() {
   error.value = "";
-  // t() called at submit time — fully reactive to locale (#4 fix: no static FormRules)
   if (!form.username) { error.value = t("login.usernameRequired"); return; }
-  if (!form.password) { error.value = t("login.passwordRequired"); return; }
+  const rules = checkRules(form.password);
+  if (!rules.valid) { error.value = t("register.weakPassword"); return; }
+  if (form.password !== form.password2) { error.value = t("register.passwordMismatch"); return; }
   loading.value = true;
   try {
-    await auth.login(form.username, form.password);
-    const next = (route.query.next as string) || "/dashboard";
-    router.replace(next);
+    await auth.register(form.username, form.password, form.email || undefined);
+    router.replace("/dashboard");
   } catch (e: unknown) {
-    const status = (e as any)?.response?.status;
-    const code = (e as any)?.response?.data?.code;
-    if (code === "account_inactive") {
-      error.value = t("login.inactive");
-    } else if (status === 401 || status === 400) {
-      error.value = t("login.invalid");
+    const code = (e as any)?.response?.data?.code as string | undefined;
+    const status = (e as any)?.response?.status as number | undefined;
+    if (code === "user_exists") {
+      error.value = t("register.userExists");
+    } else if (code === "weak_password") {
+      error.value = t("register.weakPassword");
+    } else if (code === "bad_request" || status === 400) {
+      error.value = t("register.badRequest");
     } else if (!(e as any)?.response) {
-      error.value = t("login.networkError");
+      error.value = t("register.networkError");
     } else {
-      error.value = t("login.invalid");
+      error.value = t("register.badRequest");
     }
   } finally {
     loading.value = false;
@@ -173,11 +192,7 @@ async function onSubmit() {
 .brand-title { font-size: 16px; font-weight: 600; }
 .brand-sub   { font-size: 12px; opacity: 0.75; }
 
-h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 500;
-}
+h2 { margin: 0; font-size: 20px; font-weight: 500; }
 
 .field {
   position: relative;
@@ -211,9 +226,7 @@ h2 {
   background: transparent;
 }
 
-.field :deep(.el-input) {
-  position: relative;
-}
+.field :deep(.el-input) { position: relative; }
 .field :deep(.el-input__wrapper) {
   background: rgba(255, 255, 255, 0.12);
   box-shadow: none;
@@ -249,11 +262,20 @@ h2 {
 .field :deep(.el-input__wrapper.is-focus)::after {
   background: rgba(255, 255, 255, 0.6);
 }
-.field :deep(.el-input__inner) {
-  color: #fff;
-  caret-color: #fff;
-}
+.field :deep(.el-input__inner) { color: #fff; caret-color: #fff; }
 .field :deep(.el-input__inner::placeholder) { color: transparent; }
+
+.strength-widget {
+  margin-top: -12px;
+  margin-bottom: 8px;
+}
+.strength-widget :deep(.bar-label),
+.strength-widget :deep(.rules li) {
+  color: rgba(255, 255, 255, 0.65);
+}
+.strength-widget :deep(.rules li.ok)   { color: #86efac; }
+.strength-widget :deep(.rules li.fail) { color: rgba(255, 255, 255, 0.45); }
+.strength-widget :deep(.bar.empty) { background: rgba(255, 255, 255, 0.2); }
 
 .submit-btn {
   width: 100%;
@@ -276,16 +298,9 @@ h2 {
   color: #4f46e5;
 }
 
-.error {
-  color: #fecaca;
-  font-size: 13px;
-  margin-top: 8px;
-}
+.error { color: #fecaca; font-size: 13px; margin-top: 8px; }
 
-.footer-link {
-  text-align: center;
-  font-size: 13px;
-}
+.footer-link { text-align: center; font-size: 13px; }
 .footer-link a {
   color: rgba(255, 255, 255, 0.85);
   text-decoration: underline;

@@ -47,6 +47,7 @@ const en: typeof zh = {
     invalid: "Invalid username or password",
     inactive: "Account is disabled, please contact an administrator",
     networkError: "Network error, please try again",
+    goRegister: "No account? Sign up",
   },
   layout: {
     appTitle: "Quanly Trading Platform",
@@ -81,6 +82,7 @@ const en: typeof zh = {
     tabs: {
       users: "Users",
       roles: "Roles",
+      permissions: "Permissions",
     },
     users: {
       title: "User Management",
@@ -170,6 +172,33 @@ const en: typeof zh = {
       colEffect: "Effect",
       colActions: "Actions",
     },
+  },
+  register: {
+    title: "Create account",
+    subtitle: "Sign up to get started",
+    username: "Username",
+    email: "Email (optional)",
+    password: "Password",
+    confirmPassword: "Confirm password",
+    submit: "Sign up",
+    goLogin: "Already have an account? Sign in",
+    userExists: "Username is already taken",
+    weakPassword: "Password is not strong enough",
+    badRequest: "Invalid request",
+    passwordMismatch: "Passwords do not match",
+    networkError: "Network error, please try again",
+    success: "Registered successfully, welcome!",
+  },
+  password: {
+    strength: "Password strength",
+    weak: "Weak",
+    medium: "Medium",
+    strong: "Strong",
+    ruleMinLen: "At least 8 characters",
+    ruleUpper: "Uppercase letter",
+    ruleLower: "Lowercase letter",
+    ruleDigit: "Digit",
+    ruleSpecial: "Special character",
   },
 };
 

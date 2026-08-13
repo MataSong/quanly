@@ -1,42 +1,52 @@
 <template>
   <div class="permission-admin">
-    <div class="page-header">
-      <h2 class="page-title">{{ t("admin.permissions.title") }}</h2>
-    </div>
-
-    <el-table
-      :data="tableData"
-      size="small"
-      border
-      v-loading="loading"
-    >
-      <el-table-column
-        prop="code"
-        :label="t('admin.permissions.columns.code')"
-        width="260"
-      />
-      <el-table-column
-        prop="group"
-        :label="t('admin.permissions.columns.group')"
-        width="180"
-      />
-      <el-table-column
-        prop="description"
-        :label="t('admin.permissions.columns.description')"
-      />
-    </el-table>
+    <el-tabs v-model="activeTab" class="admin-tabs">
+      <el-tab-pane :label="t('admin.tabs.users')" name="users">
+        <UserPanel v-if="activeTab === 'users'" />
+      </el-tab-pane>
+      <el-tab-pane :label="t('admin.tabs.roles')" name="roles">
+        <RolePanel v-if="activeTab === 'roles'" />
+      </el-tab-pane>
+      <el-tab-pane :label="t('admin.tabs.permissions')" name="permissions">
+        <div v-if="activeTab === 'permissions'" class="perm-tab">
+          <el-table
+            :data="tableData"
+            size="small"
+            border
+            v-loading="loading"
+          >
+            <el-table-column
+              prop="code"
+              :label="t('admin.permissions.columns.code')"
+              width="260"
+            />
+            <el-table-column
+              prop="group"
+              :label="t('admin.permissions.columns.group')"
+              width="180"
+            />
+            <el-table-column
+              prop="description"
+              :label="t('admin.permissions.columns.description')"
+            />
+          </el-table>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
+import UserPanel from "./UserPanel.vue";
+import RolePanel from "./RolePanel.vue";
 import { fetchPermissions, type PermissionsRegistry } from "@/api/accounts";
 import { formatApiError } from "@/utils/errors";
 
 const { t, locale } = useI18n();
-
+const activeTab = ref("users");
 const loading = ref(false);
 const registry = ref<PermissionsRegistry>({});
 
@@ -58,28 +68,19 @@ const tableData = computed<PermRow[]>(() => {
   return rows;
 });
 
-onMounted(async () => {
-  loading.value = true;
-  try { registry.value = await fetchPermissions(); }
-  catch (e) { ElMessage.error(formatApiError(e, "admin")); }
-  finally { loading.value = false; }
+// Load permissions data lazily when user switches to permissions tab
+watch(activeTab, async (tab) => {
+  if (tab === "permissions" && Object.keys(registry.value).length === 0) {
+    loading.value = true;
+    try { registry.value = await fetchPermissions(); }
+    catch (e) { ElMessage.error(formatApiError(e, "admin")); }
+    finally { loading.value = false; }
+  }
 });
 </script>
 
 <style scoped>
-.permission-admin {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-.page-header {
-  display: flex;
-  align-items: center;
-}
-.page-title {
-  margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: 600;
-  color: var(--gray-800);
-}
+.permission-admin { padding: 0; }
+.admin-tabs { margin-top: 0; }
+.perm-tab { margin-top: var(--space-4, 16px); }
 </style>

@@ -81,6 +81,9 @@
               :placeholder="t('admin.users.passwordPlaceholder')"
             />
           </el-form-item>
+          <el-form-item>
+            <PasswordStrength :password="createForm.password" />
+          </el-form-item>
           <el-form-item :label="t('admin.users.confirmPassword')">
             <el-input v-model="createForm.password2" type="password" show-password />
           </el-form-item>
@@ -172,6 +175,9 @@
             :placeholder="t('admin.users.passwordPlaceholder')"
           />
         </el-form-item>
+        <el-form-item>
+          <PasswordStrength :password="resetForm.password" />
+        </el-form-item>
         <el-form-item :label="t('admin.users.confirmPassword')">
           <el-input v-model="resetForm.password2" type="password" show-password />
         </el-form-item>
@@ -198,6 +204,8 @@ import {
 } from "@/api/accounts";
 import { formatApiError } from "@/utils/errors";
 import { useAuthStore } from "@/stores/auth";
+import PasswordStrength from "@/components/PasswordStrength.vue";
+import { checkRules } from "@/utils/password";
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -243,7 +251,7 @@ function openCreate() {
 }
 async function onCreate() {
   if (createForm.authSource === "local") {
-    if (createForm.password.length < 8) {
+    if (!checkRules(createForm.password).valid) {
       ElMessage.error(t("admin.users.passwordTooShort")); return;
     }
     if (createForm.password !== createForm.password2) {
@@ -337,7 +345,7 @@ function onResetPassword(row: AdminUser) {
 }
 async function onResetSubmit() {
   if (!resetTarget.value) return;
-  if (resetForm.password.length < 8) {
+  if (!checkRules(resetForm.password).valid) {
     ElMessage.error(t("admin.users.passwordTooShort")); return;
   }
   if (resetForm.password !== resetForm.password2) {

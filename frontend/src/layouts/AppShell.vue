@@ -44,20 +44,7 @@
           </el-tooltip>
         </div>
 
-        <!-- Admin sub-navigation (visible when on /admin/* and not collapsed) -->
-        <div class="group sub-group" v-if="isAdminRoute && adminSubItems.length && !collapsed">
-          <div class="group-label">{{ t("layout.nav.admin") }}</div>
-          <router-link
-            v-for="sub in adminSubItems"
-            :key="sub.to"
-            class="item sub-item"
-            :to="sub.to"
-            active-class="active"
-          >
-            <el-icon><component :is="sub.icon" /></el-icon>
-            <span>{{ sub.label }}</span>
-          </router-link>
-        </div>
+        <!-- Admin sub-navigation removed: now a single /admin route with tabs -->
       </div>
 
       <div class="sidebar-bottom">
@@ -89,16 +76,13 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useRouter, useRoute } from "vue-router";
+import { useRouter } from "vue-router";
 import {
   ArrowDown,
   Expand,
   Fold,
   Grid,
-  Key,
   Setting,
-  User,
-  UserFilled,
 } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
@@ -108,7 +92,6 @@ import LocaleSwitcher from "@/components/LocaleSwitcher.vue";
 const { t } = useI18n();
 const auth = useAuthStore();
 const router = useRouter();
-const route = useRoute();
 
 const SIDEBAR_KEY = "quanly.sidebar_collapsed";
 const collapsed = ref(localStorage.getItem(SIDEBAR_KEY) === "1");
@@ -132,21 +115,10 @@ const navItems = computed<NavItem[]>(() =>
   (
     [
       { to: "/dashboard", icon: Grid, label: t("layout.nav.dashboard"), perm: "page:dashboard" },
-      { to: "/admin/users", icon: Setting, label: t("layout.nav.admin"), perm: "page:admin" },
+      { to: "/admin", icon: Setting, label: t("layout.nav.admin"), perm: "page:admin" },
     ] as NavItem[]
   ).filter((i) => auth.hasPerm(i.perm)),
 );
-
-const isAdminRoute = computed(() => route.path.startsWith("/admin"));
-
-const adminSubItems = computed<NavItem[]>(() => {
-  if (!auth.hasPerm("page:admin")) return [];
-  return [
-    { to: "/admin/users", icon: UserFilled, label: t("layout.nav.users"), perm: "page:admin" },
-    { to: "/admin/roles", icon: User, label: t("layout.nav.roles"), perm: "page:admin" },
-    { to: "/admin/permissions", icon: Key, label: t("admin.permissions.title"), perm: "page:admin" },
-  ];
-});
 
 async function signOut() {
   await auth.logout();
@@ -249,25 +221,6 @@ async function signOut() {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.sub-group {
-  border-top: 1px solid var(--gray-100);
-  padding-top: var(--space-3);
-  margin-top: var(--space-1);
-}
-
-.group-label {
-  font-size: var(--font-size-xs);
-  color: var(--gray-400);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 0 var(--space-3) var(--space-1);
-}
-
-.sub-item {
-  padding-left: calc(var(--space-3) + 12px);
-  font-size: var(--font-size-sm);
 }
 
 .item {

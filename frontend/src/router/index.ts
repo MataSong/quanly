@@ -8,6 +8,11 @@ const routes = [
     meta: { public: true },
   },
   {
+    path: "/register",
+    component: () => import("@/views/register/Register.vue"),
+    meta: { public: true },
+  },
+  {
     path: "/",
     component: () => import("@/layouts/AppShell.vue"),
     redirect: "/dashboard",
@@ -18,17 +23,7 @@ const routes = [
         component: () => import("@/views/dashboard/Dashboard.vue"),
       },
       {
-        path: "admin/users",
-        meta: { perm: "page:admin" },
-        component: () => import("@/views/admin/UserPanel.vue"),
-      },
-      {
-        path: "admin/roles",
-        meta: { perm: "page:admin" },
-        component: () => import("@/views/admin/RolePanel.vue"),
-      },
-      {
-        path: "admin/permissions",
+        path: "admin",
         meta: { perm: "page:admin" },
         component: () => import("@/views/admin/PermissionAdmin.vue"),
       },

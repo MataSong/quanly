@@ -45,6 +45,7 @@ export default {
     invalid: "用户名或密码错误",
     inactive: "账号已被停用，请联系管理员",
     networkError: "网络异常，请稍后重试",
+    goRegister: "没有账号？去注册",
   },
   layout: {
     appTitle: "量化交易平台",
@@ -79,6 +80,7 @@ export default {
     tabs: {
       users: "用户管理",
       roles: "角色管理",
+      permissions: "权限点",
     },
     users: {
       title: "用户管理",
@@ -168,5 +170,32 @@ export default {
       colEffect: "效果",
       colActions: "操作",
     },
+  },
+  register: {
+    title: "创建账号",
+    subtitle: "注册后即可开始使用",
+    username: "用户名",
+    email: "邮箱（可选）",
+    password: "密码",
+    confirmPassword: "确认密码",
+    submit: "注册",
+    goLogin: "已有账号？去登录",
+    userExists: "用户名已被占用",
+    weakPassword: "密码强度不足",
+    badRequest: "请求参数有误",
+    passwordMismatch: "两次密码不一致",
+    networkError: "网络异常，请稍后重试",
+    success: "注册成功，欢迎！",
+  },
+  password: {
+    strength: "密码强度",
+    weak: "弱",
+    medium: "中",
+    strong: "强",
+    ruleMinLen: "长度 ≥ 8",
+    ruleUpper: "含大写字母",
+    ruleLower: "含小写字母",
+    ruleDigit: "含数字",
+    ruleSpecial: "含特殊字符",
   },
 };

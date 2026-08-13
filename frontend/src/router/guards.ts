@@ -1,11 +1,11 @@
 import type { Router, RouteLocationNormalized } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 
-// 按路由表顺序返回第一个用户有权限的路径；若无则返回 /login。
+// Return the first route the user has access to; fall back to /login.
 function firstAllowed(auth: ReturnType<typeof useAuthStore>): string {
   const candidates: Array<[string, string]> = [
     ["page:dashboard", "/dashboard"],
-    ["page:admin", "/admin/users"],
+    ["page:admin", "/admin"],
   ];
   for (const [perm, path] of candidates) {
     if (auth.hasPerm(perm)) return path;
@@ -17,24 +17,24 @@ export function installGuards(router: Router) {
   router.beforeEach((to: RouteLocationNormalized) => {
     const auth = useAuthStore();
 
-    // 已登录访问 /login → 跳首页(必须在 public 放行之前判断,否则被 public 提前放行成死代码)
-    if (to.path === "/login" && auth.isAuthenticated) {
+    // Already logged in → redirect away from /login or /register
+    if ((to.path === "/login" || to.path === "/register") && auth.isAuthenticated) {
       return { path: firstAllowed(auth) };
     }
 
-    // 公开页(/login 等)直接放行
+    // Public pages pass through
     if (to.meta.public) return true;
 
-    // 未登录：跳 /login，带 next 参数
+    // Not authenticated → go to login
     if (!auth.isAuthenticated) {
       return { path: "/login", query: { next: to.fullPath } };
     }
 
-    // 有 meta.perm 但无权限 → 跳第一个有权限的页
+    // Has perm requirement but user lacks it → go to first allowed
     const perm = to.meta.perm as string | undefined;
     if (perm && !auth.hasPerm(perm)) {
       const target = firstAllowed(auth);
-      if (target === to.path) return true; // 避免自跳循环
+      if (target === to.path) return true; // avoid self-redirect loop
       return { path: target };
     }
 
