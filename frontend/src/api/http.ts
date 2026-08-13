@@ -42,7 +42,7 @@ http.interceptors.response.use(
     if (
       error.response?.status === 401 &&
       !original._retry &&
-      !original.url?.includes("/auth/")
+      !original.url?.startsWith("/auth/")
     ) {
       original._retry = true;
       try {
