@@ -1,4 +1,13 @@
 from django.urls import path
 
-# Placeholder — 认证路由(登录/登出/Me)在 Task 4 实现
-urlpatterns = []
+from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView
+
+from .views import LoginView, LogoutView, MeView
+
+urlpatterns = [
+    path("", LoginView.as_view()),
+    path("logout/", LogoutView.as_view()),
+    path("refresh/", TokenRefreshView.as_view()),
+    path("me/", MeView.as_view()),
+]
