@@ -193,6 +193,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import {
   listUsers, createUser, deleteUser, setUserRoles, setUserActive,
   resetUserPassword, listOverrides, addOverride, deleteOverride, listRoles,
+  fetchPermissions,
   type AdminUser, type Override, type Role,
 } from "@/api/accounts";
 import { formatApiError } from "@/utils/errors";
@@ -217,6 +218,9 @@ async function reload() {
   tableLoading.value = true;
   try {
     [users.value, allRoles.value] = await Promise.all([listUsers(), listRoles()]);
+    // 填充权限覆盖下拉的候选权限码(展平权限点注册表各分组的 items keys)
+    const reg = await fetchPermissions();
+    allCodes.value = Object.values(reg).flatMap((g) => Object.keys(g.items));
   } catch (e) {
     ElMessage.error(formatApiError(e, "admin"));
   } finally {

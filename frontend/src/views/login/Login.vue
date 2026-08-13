@@ -82,8 +82,8 @@ const errorMsg = ref("");
 const form = reactive({ username: "", password: "" });
 
 const rules: FormRules = {
-  username: [{ required: true, message: t("login.usernamePlaceholder"), trigger: "blur" }],
-  password: [{ required: true, message: t("login.passwordPlaceholder"), trigger: "blur" }],
+  username: [{ required: true, message: t("login.usernameRequired"), trigger: "blur" }],
+  password: [{ required: true, message: t("login.passwordRequired"), trigger: "blur" }],
 };
 
 async function onSubmit() {

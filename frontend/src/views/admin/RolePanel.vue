@@ -16,7 +16,7 @@
       <el-table-column :label="t('admin.roles.columns.system')" width="120" align="center">
         <template #default="{ row }">
           <el-tag v-if="row.is_system" size="small" type="warning">
-            {{ t("admin.roles.systemRole").split("（")[0] }}
+            {{ t("admin.roles.systemRoleShort") }}
           </el-tag>
           <span v-else>—</span>
         </template>
