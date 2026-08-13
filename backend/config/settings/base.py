@@ -4,6 +4,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# dev/test 用 fallback 方便本地起;生产由 prod.py 强制校验 QUANLY_SECRET_KEY 必须显式设置。
 SECRET_KEY = os.environ.get("QUANLY_SECRET_KEY", "insecure-dev-key")
 DEBUG = False
 ALLOWED_HOSTS = os.environ.get("QUANLY_ALLOWED_HOSTS", "localhost").split(",")
