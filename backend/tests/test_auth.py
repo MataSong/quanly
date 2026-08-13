@@ -76,6 +76,27 @@ def test_logout_blacklists_refresh(api_client):
 
 
 @pytest.mark.django_db
+def test_blacklisted_refresh_cannot_refresh(api_client):
+    """logout 后被拉黑的 refresh token 不能再换取新 access token(验证真失效,而非仅不崩)。"""
+    User.objects.create_user("frank", password="pw123456")
+    resp = api_client.post(
+        "/api/auth/", {"username": "frank", "password": "pw123456"}, format="json"
+    )
+    refresh = resp.data["refresh"]
+    # 拉黑前:refresh 能换 access
+    ok = api_client.post("/api/auth/refresh/", {"refresh": refresh}, format="json")
+    assert ok.status_code == 200
+    # 登出拉黑该 refresh
+    assert api_client.post(
+        "/api/auth/logout/", {"refresh": refresh}, format="json"
+    ).status_code == 204
+    # 拉黑后:同一 refresh 不能再换 access(rotate 后原 token 已黑名单)
+    denied = api_client.post("/api/auth/refresh/", {"refresh": refresh}, format="json")
+    assert denied.status_code == 401
+
+
+
+@pytest.mark.django_db
 def test_login_user_data_structure(api_client):
     User.objects.create_user("frank", password="pw123456")
     resp = api_client.post(
