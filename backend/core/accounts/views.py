@@ -60,16 +60,18 @@ class UserViewSet(viewsets.ModelViewSet):
     @audit("accounts.user.delete")
     def destroy(self, request, *args, **kwargs):
         user = self.get_object()
-        if user.is_superuser:
-            return Response(
-                {"code": "cannot_delete_superuser",
-                 "message": "superuser cannot be deleted"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # 先查"删自己"再查"删超管":两条保护相互独立,
+        # 避免 is_superuser 在前时 cannot_delete_self 分支永远不可达(死代码)。
         if user.id == request.user.id:
             return Response(
                 {"code": "cannot_delete_self",
                  "message": "cannot delete yourself"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if user.is_superuser:
+            return Response(
+                {"code": "cannot_delete_superuser",
+                 "message": "superuser cannot be deleted"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return super().destroy(request, *args, **kwargs)
@@ -143,7 +145,7 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({"data": OverrideSerializer(qs, many=True).data})
         return self._add_override(request, user)
 
-    @audit("accounts.user.set_overrides")
+    @audit("accounts.user.add_override")
     def _add_override(self, request, user):
         serializer = OverrideSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -160,6 +162,11 @@ class UserViewSet(viewsets.ModelViewSet):
             url_path=r"overrides/(?P<override_id>\d+)")
     def delete_override(self, request, pk=None, override_id=None):
         user = self.get_object()
-        UserPermissionOverride.objects.filter(
+        deleted, _ = UserPermissionOverride.objects.filter(
             user=user, pk=override_id).delete()
+        if not deleted:
+            return Response(
+                {"code": "override_not_found", "message": "override not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)

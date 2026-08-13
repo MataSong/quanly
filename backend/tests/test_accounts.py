@@ -284,20 +284,25 @@ def test_cannot_delete_superuser(api_client):
 
 @pytest.mark.django_db
 def test_cannot_delete_self(api_client):
-    # The "cannot_delete_self" branch triggers when a superuser tries to delete a user
-    # who is themselves AND not a superuser — which is impossible since only superusers
-    # reach this endpoint. In practice, when a superuser tries to delete their own account,
-    # the is_superuser guard fires first (cannot_delete_superuser).
-    # This test verifies that a superuser trying to delete a plain (non-superuser) user
-    # who happens to be the same as... wait, that's impossible since they'd need to be superuser
-    # to reach the endpoint. The protect-self path is covered by cannot_delete_superuser for
-    # superusers. We verify the 400 response is returned in all self-delete attempts.
+    # C1 修复后:destroy 先查"删自己"再查"删超管",两条保护相互独立。
+    # 超管删自己 -> 精确命中 cannot_delete_self。
     su = User.objects.create_superuser("su_self", "s@x.com", "pw123456")
     api_client.force_authenticate(su)
     resp = api_client.delete(f"/api/accounts/users/{su.id}/")
     assert resp.status_code == 400
-    # is_superuser check fires first; self-delete is still blocked correctly
-    assert resp.data["code"] in ("cannot_delete_superuser", "cannot_delete_self")
+    assert resp.data["code"] == "cannot_delete_self"
+
+
+@pytest.mark.django_db
+def test_cannot_delete_other_superuser(api_client):
+    # 删"另一个"超管(非自己) -> 命中 cannot_delete_superuser。
+    su = User.objects.create_superuser("su_actor", "a@x.com", "pw123456")
+    other = User.objects.create_superuser("su_other", "o@x.com", "pw123456")
+    api_client.force_authenticate(su)
+    resp = api_client.delete(f"/api/accounts/users/{other.id}/")
+    assert resp.status_code == 400
+    assert resp.data["code"] == "cannot_delete_superuser"
+
 
 
 @pytest.mark.django_db
@@ -371,6 +376,17 @@ def test_delete_override(api_client):
     api_client.force_authenticate(su)
     resp = api_client.delete(f"/api/accounts/users/{u.id}/overrides/{override.id}/")
     assert resp.status_code == 204
+
+
+@pytest.mark.django_db
+def test_delete_override_not_found(api_client):
+    # I4 修复:删不存在的 override 应返回 404,而非静默 204。
+    su = User.objects.create_superuser("su_del_ovr_404", "s@x.com", "pw123456")
+    u = User.objects.create_user("target_del_ovr_404", password="pw123456")
+    api_client.force_authenticate(su)
+    resp = api_client.delete(f"/api/accounts/users/{u.id}/overrides/999999/")
+    assert resp.status_code == 404
+    assert resp.data["code"] == "override_not_found"
 
 
 @pytest.mark.django_db
