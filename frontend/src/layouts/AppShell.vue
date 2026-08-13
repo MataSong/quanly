@@ -82,6 +82,7 @@ import {
   Expand,
   Fold,
   Grid,
+  Key,
   Setting,
 } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
@@ -116,6 +117,7 @@ const navItems = computed<NavItem[]>(() =>
     [
       { to: "/dashboard", icon: Grid, label: t("layout.nav.dashboard"), perm: "page:dashboard" },
       { to: "/admin", icon: Setting, label: t("layout.nav.admin"), perm: "page:admin" },
+      { to: "/credentials", icon: Key, label: t("layout.nav.credentials"), perm: "page:credentials" },
     ] as NavItem[]
   ).filter((i) => auth.hasPerm(i.perm)),
 );

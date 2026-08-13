@@ -8,6 +8,15 @@ PERMISSION_GROUPS: dict[str, dict] = {
         "items": {
             "page:dashboard": {"zh": "查看仪表盘", "en": "View Dashboard"},
             "page:admin": {"zh": "查看权限管理", "en": "View Admin"},
+            "page:credentials": {"zh": "密钥管理", "en": "Credentials"},
+        },
+    },
+    "credentials": {
+        "label_zh": "密钥管理",
+        "label_en": "Credentials",
+        "items": {
+            "credentials:view": {"zh": "查看", "en": "View Credentials"},
+            "credentials:manage": {"zh": "管理", "en": "Manage Credentials"},
         },
     },
 }

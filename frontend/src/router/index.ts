@@ -27,6 +27,11 @@ const routes = [
         meta: { perm: "page:admin" },
         component: () => import("@/views/admin/PermissionAdmin.vue"),
       },
+      {
+        path: "credentials",
+        meta: { perm: "page:credentials" },
+        component: () => import("@/views/credentials/CredentialPanel.vue"),
+      },
     ],
   },
   { path: "/:pathMatch(.*)*", redirect: "/dashboard" },

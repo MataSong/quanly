@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "core.auth",
     "core.accounts",
     "core.audit",
+    "core.credentials",
 ]
 
 MIDDLEWARE = [
@@ -77,6 +78,12 @@ MEDIA_ROOT = BASE_DIR / "media"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2_621_440
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2_621_440
 DATA_UPLOAD_MAX_NUMBER_FIELDS = None
+
+# Credentials encryption key (Fernet, base64-encoded 32-byte key).
+# Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Dev: a static fallback in crypto.py is used when this is unset (never use in production).
+# Production: prod.py asserts this is explicitly set.
+QUANLY_CREDENTIALS_ENC_KEY = os.environ.get("QUANLY_CREDENTIALS_ENC_KEY", "")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
