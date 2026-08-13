@@ -8,17 +8,13 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 ]
 
-# --- core app routes (apps implemented in subsequent tasks) ---
-# Each include is guarded so manage.py check/migrate pass before the apps exist.
-try:
-    urlpatterns += [path("api/auth/", include("core.auth.urls"))]
-except Exception:
-    pass
-
-try:
-    urlpatterns += [path("api/accounts/", include("core.accounts.urls"))]
-except Exception:
-    pass
+# --- core app routes ---
+# 各 app 的 urls.py 骨架已就位(初期为空 urlpatterns),后续任务往里加路由。
+# 不用 try/except 包裹:让 urls 里的导入/语法错误正常暴露,避免路由被静默吞掉难排查。
+urlpatterns += [
+    path("api/auth/", include("core.auth.urls")),
+    path("api/accounts/", include("core.accounts.urls")),
+]
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
