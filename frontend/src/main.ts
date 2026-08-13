@@ -7,12 +7,9 @@ import "@/styles/base.scss";
 
 import App from "./App.vue";
 
-// TODO(Task 7): import router from "@/router" and app.use(router)
-// TODO(Task 8): import { i18n } from "@/locales" and app.use(i18n)
-
 const app = createApp(App);
 app.use(createPinia());
-// app.use(router);   // Task 7
-// app.use(i18n);     // Task 8
 app.use(ElementPlus);
+// Task 7 接 i18n: import { i18n } from "@/locales"; app.use(i18n)
+// Task 8 接路由: import router from "@/router"; app.use(router)
 app.mount("#app");
