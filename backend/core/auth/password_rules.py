@@ -14,8 +14,6 @@
 
 import re
 
-from rest_framework.exceptions import ValidationError
-
 _CATEGORY_PATTERNS = [
     re.compile(r"[A-Z]"),   # 大写
     re.compile(r"[a-z]"),   # 小写
@@ -48,13 +46,3 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
             f"密码须包含大写、小写、数字、特殊字符中的至少 {PASSWORD_MIN_CATEGORIES} 类。",
         )
     return (True, "")
-
-
-def raise_if_weak(password: str) -> None:
-    """若密码不符合强度规则,抛 DRF ValidationError(结构化 code)。"""
-    ok, message = validate_password_strength(password)
-    if not ok:
-        raise ValidationError(
-            {"code": "weak_password", "message": message},
-            code="weak_password",
-        )

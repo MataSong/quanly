@@ -1,6 +1,7 @@
 import pytest
 from django.contrib.auth.models import User
 
+from core.accounts.models import Role
 from core.accounts.services import get_effective_permissions
 
 
@@ -216,5 +217,4 @@ def test_register_idempotent_user_role_creation(api_client):
         {"username": "user_b", "password": STRONG_PASS},
         format="json",
     )
-    from core.accounts.models import Role
     assert Role.objects.filter(name="user").count() == 1

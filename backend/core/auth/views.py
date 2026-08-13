@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib.auth import authenticate, get_user_model
+from django.db import IntegrityError, transaction
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -96,27 +97,34 @@ class RegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 4. 创建用户 + profile
-        user = User.objects.create_user(
-            username=username,
-            password=password,
-            email=email,
-        )
-        UserProfile.objects.get_or_create(
-            user=user,
-            defaults={"auth_source": "local"},
-        )
-
-        # 5. 赋内置 user 角色(兜底 get_or_create,防止没跑 seed)
-        user_role, _ = Role.objects.get_or_create(
-            name="user",
-            defaults={
-                "description": "普通用户",
-                "permissions": ["page:dashboard"],
-                "is_system": True,
-            },
-        )
-        UserRole.objects.get_or_create(user=user, role=user_role)
+        # 4. 创建用户 + profile + 赋角色(原子,并发下靠 DB 唯一约束兜底)
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    username=username,
+                    password=password,
+                    email=email,
+                )
+                UserProfile.objects.get_or_create(
+                    user=user,
+                    defaults={"auth_source": "local"},
+                )
+                # 5. 赋内置 user 角色(兜底 get_or_create,防止没跑 seed)
+                user_role, _ = Role.objects.get_or_create(
+                    name="user",
+                    defaults={
+                        "description": "普通用户",
+                        "permissions": ["page:dashboard"],
+                        "is_system": True,
+                    },
+                )
+                UserRole.objects.get_or_create(user=user, role=user_role)
+        except IntegrityError:
+            # 并发下另一个请求已抢先建同名用户(exists 检查与 create 非原子)
+            return Response(
+                {"code": "user_exists", "message": "username already taken"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # 6. 注册即登录:签发 token
         refresh = RefreshToken.for_user(user)
