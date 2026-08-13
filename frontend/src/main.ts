@@ -4,6 +4,7 @@ import ElementPlus from "element-plus";
 import { i18n } from "@/locales";
 import router from "@/router";
 
+import "element-plus/dist/index.css";
 import "@/styles/tokens.scss";
 import "@/styles/base.scss";
 
