@@ -144,10 +144,121 @@ def test_symbols_response_structure(api_client):
         assert "baseCcy" in sym
         assert "quoteCcy" in sym
 
+@pytest.mark.django_db
+def test_candles_with_after_calls_history(api_client):
+    """When `after` query param is provided, view uses get_history_candles."""
+    user = _make_market_viewer("candles_after")
+    api_client.force_authenticate(user)
+    with patch(
+        "core.market.views.okx_client.get_history_candles", return_value=FAKE_CANDLES
+    ) as mock_hist:
+        resp = api_client.get(
+            "/api/market/candles?symbol=BTC-USDT&bar=1m&limit=100&after=1700000000000"
+        )
+    assert resp.status_code == 200
+    mock_hist.assert_called_once_with(
+        symbol="BTC-USDT", bar="1m", after="1700000000000", limit=100
+    )
+    data = resp.data
+    assert data["symbol"] == "BTC-USDT"
+    assert len(data["data"]) == 1
+
+
+@pytest.mark.django_db
+def test_candles_without_after_calls_get_candles(api_client):
+    """When no `after` param, view uses get_candles (latest data)."""
+    user = _make_market_viewer("candles_no_after")
+    api_client.force_authenticate(user)
+    with patch(
+        "core.market.views.okx_client.get_candles", return_value=FAKE_CANDLES
+    ) as mock_candles:
+        resp = api_client.get("/api/market/candles?symbol=BTC-USDT&bar=1m")
+    assert resp.status_code == 200
+    mock_candles.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_history_candles_okx_error_returns_502(api_client):
+    """get_history_candles raising an error should return 502."""
+    user = _make_market_viewer("hist_502")
+    api_client.force_authenticate(user)
+    with patch(
+        "core.market.views.okx_client.get_history_candles",
+        side_effect=RuntimeError("OKX history down"),
+    ):
+        resp = api_client.get(
+            "/api/market/candles?symbol=BTC-USDT&bar=1m&after=1700000000000"
+        )
+    assert resp.status_code == 502
+
 
 # ──────────────────────────────────────────────
-# MarketConsumer — WebSocket tests
+# okx_client.get_history_candles unit tests
 # ──────────────────────────────────────────────
+
+def _fake_history_response(rows):
+    return {"code": "0", "data": rows}
+
+
+def test_get_history_candles_returns_oldest_first():
+    """get_history_candles reverses OKX newest-first data to oldest-first."""
+    fake_rows = [
+        ["1700000060000", "35100", "35200", "35000", "35150", "5", "175750"],
+        ["1700000000000", "35000", "35100", "34900", "35050", "10", "350000"],
+    ]
+    with patch(
+        "core.market.okx_client._market_api"
+    ) as mock_api_factory:
+        mock_api = MagicMock()
+        mock_api.get_history_candlesticks.return_value = _fake_history_response(fake_rows)
+        mock_api_factory.return_value = mock_api
+
+        from core.market.okx_client import get_history_candles
+        result = get_history_candles("BTC-USDT", bar="1m", after="1700000060000", limit=2)
+
+    assert len(result) == 2
+    # Oldest bar first (ts=1700000000000)
+    assert result[0]["ts"] == 1700000000000
+    assert result[1]["ts"] == 1700000060000
+    mock_api.get_history_candlesticks.assert_called_once_with(
+        instId="BTC-USDT", bar="1m", limit="2", after="1700000060000"
+    )
+
+
+def test_get_history_candles_without_after():
+    """after=None should not pass after kwarg to OKX."""
+    fake_rows = [
+        ["1700000000000", "35000", "35100", "34900", "35050", "10", "350000"],
+    ]
+    with patch("core.market.okx_client._market_api") as mock_api_factory:
+        mock_api = MagicMock()
+        mock_api.get_history_candlesticks.return_value = _fake_history_response(fake_rows)
+        mock_api_factory.return_value = mock_api
+
+        from core.market.okx_client import get_history_candles
+        result = get_history_candles("BTC-USDT", bar="1m", after=None, limit=10)
+
+    assert len(result) == 1
+    call_kwargs = mock_api.get_history_candlesticks.call_args.kwargs
+    assert "after" not in call_kwargs
+
+
+def test_get_history_candles_okx_error_raises():
+    """OKX non-zero code should raise RuntimeError."""
+    with patch("core.market.okx_client._market_api") as mock_api_factory:
+        mock_api = MagicMock()
+        mock_api.get_history_candlesticks.return_value = {
+            "code": "50001", "msg": "service unavailable"
+        }
+        mock_api_factory.return_value = mock_api
+
+        from core.market.okx_client import get_history_candles
+        import pytest as _pytest
+        with _pytest.raises(RuntimeError, match="OKX get_history_candlesticks error"):
+            get_history_candles("BTC-USDT")
+
+
+
 
 def _make_access_token(user) -> str:
     """Mint a SimpleJWT AccessToken for user. Must be called in sync context."""

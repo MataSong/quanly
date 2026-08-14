@@ -65,6 +65,11 @@ const en: typeof zh = {
       credentials: "Credentials",
       market: "Market",
     },
+    groups: {
+      features: "Features",
+      account: "Account",
+      system: "System",
+    },
   },
   dashboard: {
     title: "Dashboard",
@@ -247,6 +252,11 @@ const en: typeof zh = {
     errorWs: "WebSocket connection error",
     bar: {
       label: "Interval",
+    },
+    timezone: {
+      label: "Timezone",
+      beijing: "Beijing (UTC+8)",
+      utc: "UTC",
     },
   },
 };

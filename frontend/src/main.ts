@@ -7,6 +7,7 @@ import router from "@/router";
 import "element-plus/dist/index.css";
 import "@/styles/tokens.scss";
 import "@/styles/base.scss";
+import "@/styles/element-overrides.scss";
 
 import App from "./App.vue";
 

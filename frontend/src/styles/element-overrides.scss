@@ -1,0 +1,10 @@
+/* Element Plus table overrides — aligned with ops_hub */
+.el-table {
+  --el-table-border-color: var(--gray-200);       /* #e3e8ee */
+  --el-table-header-bg-color: var(--gray-50);     /* #f6f9fc */
+  font-size: var(--font-size-base);               /* 14px */
+}
+.el-table th.el-table__cell {
+  font-weight: 600;
+  color: var(--gray-700);                         /* #2d3748 */
+}

@@ -29,9 +29,10 @@
     <!-- Sidebar -->
     <aside class="sidebar" :class="{ collapsed }">
       <div class="nav-groups">
-        <div class="group" v-if="navItems.length">
+        <div class="group" v-if="featureItems.length">
+          <div class="group-title">{{ t("layout.groups.features") }}</div>
           <el-tooltip
-            v-for="item in navItems"
+            v-for="item in featureItems"
             :key="item.to"
             :content="item.label"
             placement="right"
@@ -44,7 +45,37 @@
           </el-tooltip>
         </div>
 
-        <!-- Admin sub-navigation removed: now a single /admin route with tabs -->
+        <div class="group" v-if="accountItems.length">
+          <div class="group-title">{{ t("layout.groups.account") }}</div>
+          <el-tooltip
+            v-for="item in accountItems"
+            :key="item.to"
+            :content="item.label"
+            placement="right"
+            :disabled="!collapsed"
+          >
+            <router-link class="item" :to="item.to" active-class="active">
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
+            </router-link>
+          </el-tooltip>
+        </div>
+
+        <div class="group" v-if="systemItems.length">
+          <div class="group-title">{{ t("layout.groups.system") }}</div>
+          <el-tooltip
+            v-for="item in systemItems"
+            :key="item.to"
+            :content="item.label"
+            placement="right"
+            :disabled="!collapsed"
+          >
+            <router-link class="item" :to="item.to" active-class="active">
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
+            </router-link>
+          </el-tooltip>
+        </div>
       </div>
 
       <div class="sidebar-bottom">
@@ -113,13 +144,27 @@ interface NavItem {
   perm: string;
 }
 
-const navItems = computed<NavItem[]>(() =>
+const featureItems = computed<NavItem[]>(() =>
   (
     [
       { to: "/dashboard", icon: Grid, label: t("layout.nav.dashboard"), perm: "page:dashboard" },
-      { to: "/admin", icon: Setting, label: t("layout.nav.admin"), perm: "page:admin" },
-      { to: "/credentials", icon: Key, label: t("layout.nav.credentials"), perm: "page:credentials" },
       { to: "/market", icon: TrendCharts, label: t("layout.nav.market"), perm: "page:market" },
+    ] as NavItem[]
+  ).filter((i) => auth.hasPerm(i.perm)),
+);
+
+const accountItems = computed<NavItem[]>(() =>
+  (
+    [
+      { to: "/credentials", icon: Key, label: t("layout.nav.credentials"), perm: "page:credentials" },
+    ] as NavItem[]
+  ).filter((i) => auth.hasPerm(i.perm)),
+);
+
+const systemItems = computed<NavItem[]>(() =>
+  (
+    [
+      { to: "/admin", icon: Setting, label: t("layout.nav.admin"), perm: "page:admin" },
     ] as NavItem[]
   ).filter((i) => auth.hasPerm(i.perm)),
 );
@@ -227,6 +272,14 @@ async function signOut() {
   gap: 2px;
 }
 
+.group-title {
+  font-size: var(--font-size-xs);
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 12px 4px;
+}
+
 .item {
   display: inline-flex;
   align-items: center;
@@ -303,6 +356,7 @@ async function signOut() {
   padding: var(--space-4) 0 0;
 }
 .sidebar.collapsed .sidebar-footer { display: none; }
+.sidebar.collapsed .group-title { display: none; }
 
 /* Main */
 .main {

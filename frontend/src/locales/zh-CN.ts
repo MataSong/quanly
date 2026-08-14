@@ -63,6 +63,11 @@ export default {
       credentials: "密钥管理",
       market: "行情",
     },
+    groups: {
+      features: "功能",
+      account: "账户",
+      system: "系统管理",
+    },
   },
   dashboard: {
     title: "仪表盘",
@@ -245,6 +250,11 @@ export default {
     errorWs: "WebSocket 连接错误",
     bar: {
       label: "周期",
+    },
+    timezone: {
+      label: "时区",
+      beijing: "北京时间 (UTC+8)",
+      utc: "UTC",
     },
   },
 };

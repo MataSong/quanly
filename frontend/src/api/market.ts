@@ -31,10 +31,13 @@ export async function getCandles(
   symbol: string,
   bar: string = "1m",
   limit: number = 100,
+  after?: number,
 ): Promise<CandlesResponse> {
-  const r = await http.get<CandlesResponse>("/market/candles", {
-    params: { symbol, bar, limit },
-  });
+  const params: Record<string, string | number> = { symbol, bar, limit };
+  if (after !== undefined) {
+    params.after = after;
+  }
+  const r = await http.get<CandlesResponse>("/market/candles", { params });
   return r.data;
 }
 

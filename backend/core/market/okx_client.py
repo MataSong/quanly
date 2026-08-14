@@ -66,6 +66,46 @@ def get_candles(symbol: str, bar: str = "1m", limit: int = 100) -> list[dict[str
     return candles
 
 
+def get_history_candles(
+    symbol: str, bar: str = "1m", after: str | None = None, limit: int = 100
+) -> list[dict[str, Any]]:
+    """Fetch older historical candlestick data (pagination backward in time).
+
+    Uses MarketData.get_history_candlesticks which returns data before the
+    given ``after`` timestamp (milliseconds string).  OKX single-page limit
+    is 100.  Returns the same structure as get_candles.
+    """
+    api = _market_api()
+    kwargs: dict[str, str] = {
+        "instId": symbol,
+        "bar": bar,
+        "limit": str(min(limit, 100)),
+    }
+    if after is not None:
+        kwargs["after"] = str(after)
+    resp = api.get_history_candlesticks(**kwargs)
+    if resp.get("code") != "0":
+        msg = resp.get("msg", "unknown OKX error")
+        raise RuntimeError(f"OKX get_history_candlesticks error: {msg}")
+
+    raw: list[list[str]] = resp.get("data", [])
+    candles = []
+    for row in raw:
+        candles.append({
+            "ts": int(row[0]),
+            "o": row[1],
+            "h": row[2],
+            "l": row[3],
+            "c": row[4],
+            "vol": row[5],
+            "volCcy": row[6],
+        })
+    # OKX returns newest-first; reverse to oldest-first
+    candles.reverse()
+    return candles
+
+
+
 def get_spot_symbols() -> list[dict[str, Any]]:
     """Fetch all SPOT instrument definitions from OKX.
 
