@@ -140,65 +140,53 @@ def test_place_order_other_user_credential_returns_404(api_client):
 
 @pytest.mark.django_db
 def test_flag_mapping_sim_credential(api_client):
-    """sim credential must produce flag='1' when constructing TradeAPI."""
+    """sim credential must produce flag='1' — verified through the REAL _trade_api chain.
+
+    Patches okx.Trade (SDK layer), NOT _trade_api, so the real _flag(cred) execution
+    path is exercised. If _flag() were reversed, this test would catch it.
+    """
     user = _make_user_with_perms("flag_sim", ["trading:place_order"])
     cred = _make_credential(user, env=Credential.ENV_SIM)
     api_client.force_authenticate(user)
 
-    captured_flags = []
+    mock_trade_mod = MagicMock()
+    mock_api = MagicMock()
+    mock_api.place_order.return_value = _okx_place_success()
+    mock_trade_mod.TradeAPI.return_value = mock_api
 
-    def fake_trade_api(c):
-        from okx import Trade  # type: ignore[import]
-        from core.credentials.crypto import decrypt
-        api_key = decrypt(c.api_key_enc)
-        secret = decrypt(c.secret_enc)
-        passphrase = decrypt(c.passphrase_enc)
-        flag = "1" if c.env == Credential.ENV_SIM else "0"
-        captured_flags.append(flag)
-        m = MagicMock()
-        m.place_order.return_value = _okx_place_success()
-        return m
+    with patch.dict("sys.modules", {"okx": MagicMock(Trade=mock_trade_mod)}):
+        with patch("core.trading.okx_ext.Trade", mock_trade_mod, create=True):
+            api_client.post("/api/trading/order", {
+                "credential_id": cred.id, "inst_type": "SPOT", "inst_id": "BTC-USDT",
+                "side": "buy", "ord_type": "market", "sz": "0.01",
+            }, format="json")
 
-    with patch("core.trading.okx_ext._trade_api", side_effect=fake_trade_api):
-        api_client.post("/api/trading/order", {
-            "credential_id": cred.id,
-            "inst_type": "SPOT",
-            "inst_id": "BTC-USDT",
-            "side": "buy",
-            "ord_type": "market",
-            "sz": "0.01",
-        }, format="json")
-
-    assert captured_flags == ["1"]
+    # 断言真实构造器实际收到的 flag(穿透 _flag → TradeAPI(flag=...))
+    _, kwargs = mock_trade_mod.TradeAPI.call_args
+    assert kwargs["flag"] == "1"
 
 
 @pytest.mark.django_db
 def test_flag_mapping_live_credential(api_client):
-    """live credential must produce flag='0' when constructing TradeAPI."""
+    """live credential must produce flag='0' — verified through the REAL _trade_api chain."""
     user = _make_user_with_perms("flag_live", ["trading:place_order"])
     cred = _make_credential(user, env=Credential.ENV_LIVE)
     api_client.force_authenticate(user)
 
-    captured_flags = []
+    mock_trade_mod = MagicMock()
+    mock_api = MagicMock()
+    mock_api.place_order.return_value = _okx_place_success()
+    mock_trade_mod.TradeAPI.return_value = mock_api
 
-    def fake_trade_api(c):
-        flag = "1" if c.env == Credential.ENV_SIM else "0"
-        captured_flags.append(flag)
-        m = MagicMock()
-        m.place_order.return_value = _okx_place_success()
-        return m
+    with patch.dict("sys.modules", {"okx": MagicMock(Trade=mock_trade_mod)}):
+        with patch("core.trading.okx_ext.Trade", mock_trade_mod, create=True):
+            api_client.post("/api/trading/order", {
+                "credential_id": cred.id, "inst_type": "SPOT", "inst_id": "ETH-USDT",
+                "side": "sell", "ord_type": "market", "sz": "0.1",
+            }, format="json")
 
-    with patch("core.trading.okx_ext._trade_api", side_effect=fake_trade_api):
-        api_client.post("/api/trading/order", {
-            "credential_id": cred.id,
-            "inst_type": "SPOT",
-            "inst_id": "ETH-USDT",
-            "side": "sell",
-            "ord_type": "market",
-            "sz": "0.1",
-        }, format="json")
-
-    assert captured_flags == ["0"]
+    _, kwargs = mock_trade_mod.TradeAPI.call_args
+    assert kwargs["flag"] == "0"
 
 
 @pytest.mark.django_db

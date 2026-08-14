@@ -52,6 +52,11 @@ def audit(action: Union[str, Callable]):
                     "status_code": getattr(response, "status_code", None),
                     "target_id": _extract_target_id(response),
                 }
+                # view 可通过 request._audit_extra 补充非敏感上下文(如 credential_id/inst_id);
+                # 失败请求(502)也能借此在审计里留下溯源信息。
+                extra = getattr(request, "_audit_extra", None)
+                if isinstance(extra, dict):
+                    detail.update(extra)
                 AuditLog.objects.create(
                     user=actor,
                     action=resolved_action,

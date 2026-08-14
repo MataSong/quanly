@@ -23,9 +23,17 @@ from .serializers import CancelOrderSerializer, OrderSerializer, PlaceOrderSeria
 logger = logging.getLogger("quanly.trading")
 
 
-def _get_credential(request, credential_id: int) -> Credential:
-    """Return credential owned by request.user, or raise 404."""
-    return get_object_or_404(Credential, id=credential_id, user=request.user)
+def _get_credential(request, credential_id) -> Credential:
+    """Return credential owned by request.user, or raise 404.
+
+    credential_id 可能来自 query string(字符串);非法值(非数字)返回 404 而非 500。
+    """
+    try:
+        cid = int(credential_id)
+    except (TypeError, ValueError):
+        from rest_framework.exceptions import NotFound
+        raise NotFound("credential not found")
+    return get_object_or_404(Credential, id=cid, user=request.user)
 
 
 class PlaceOrderView(APIView):
@@ -42,6 +50,12 @@ class PlaceOrderView(APIView):
         d = ser.validated_data
 
         cred = _get_credential(request, d["credential_id"])
+
+        # 审计上下文(非敏感,不含密钥),失败时也能溯源
+        request._audit_extra = {
+            "credential_id": d["credential_id"], "env": cred.env,
+            "inst_id": d["inst_id"], "side": d["side"], "inst_type": d["inst_type"],
+        }
 
         try:
             okx_data = okx_ext.place_order(
@@ -81,13 +95,19 @@ class PlaceOrderView(APIView):
             reduce_only=bool(d["reduce_only"]),
             okx_ord_id=okx_data.get("ordId", ""),
             cl_ord_id=okx_data.get("clOrdId", ""),
-            state=okx_data.get("sCode", "live"),
+            # 注:这里存的是 OKX 下单回执的 sCode("0"=下单成功受理),
+            # 不是订单生命周期状态(filled/canceled);后者需另查 OKX。
+            state=okx_data.get("sCode", ""),
         )
 
         return Response(
             {
                 "order": OrderSerializer(order).data,
-                "okx": okx_data,
+                # 白名单透传,只回订单标识,不透传 OKX 响应体其余字段。
+                "okx": {
+                    "ordId": okx_data.get("ordId", ""),
+                    "clOrdId": okx_data.get("clOrdId", ""),
+                },
             },
             status=status.HTTP_201_CREATED,
         )
@@ -108,13 +128,24 @@ class CancelOrderView(APIView):
 
         cred = _get_credential(request, d["credential_id"])
 
+        request._audit_extra = {
+            "credential_id": d["credential_id"], "env": cred.env,
+            "inst_id": d["inst_id"], "ord_id": d["ord_id"],
+        }
+
         try:
             okx_data = okx_ext.cancel_order(cred, d["inst_id"], d["ord_id"])
         except RuntimeError as exc:
             logger.error("OKX cancel_order failed: %s", exc)
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
-        return Response({"okx": okx_data}, status=status.HTTP_200_OK)
+        return Response(
+            {"okx": {
+                "ordId": okx_data.get("ordId", ""),
+                "clOrdId": okx_data.get("clOrdId", ""),
+            }},
+            status=status.HTTP_200_OK,
+        )
 
 
 class OrdersView(APIView):
@@ -131,7 +162,7 @@ class OrdersView(APIView):
                 {"detail": "credential_id is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        cred = _get_credential(request, int(credential_id))
+        cred = _get_credential(request, credential_id)
         inst_type = request.query_params.get("inst_type")
 
         try:
@@ -157,7 +188,7 @@ class PositionsView(APIView):
                 {"detail": "credential_id is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        cred = _get_credential(request, int(credential_id))
+        cred = _get_credential(request, credential_id)
         inst_type = request.query_params.get("inst_type")
 
         try:
@@ -183,7 +214,7 @@ class BalanceView(APIView):
                 {"detail": "credential_id is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        cred = _get_credential(request, int(credential_id))
+        cred = _get_credential(request, credential_id)
 
         try:
             balance = okx_ext.get_balance(cred)

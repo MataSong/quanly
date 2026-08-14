@@ -133,7 +133,10 @@ def cancel_order(cred: Credential, inst_id: str, ord_id: str) -> dict[str, Any]:
         msg = resp.get("msg") or resp.get("data", [{}])[0].get("sMsg", "unknown OKX error")
         raise RuntimeError(f"OKX cancel_order error [{resp.get('code')}]: {msg}")
     data_list = resp.get("data", [])
-    return data_list[0] if data_list else {}
+    if not data_list:
+        # OKX 撤单成功时 data 不应为空;为空视为异常,避免前端误判成功。
+        raise RuntimeError("OKX cancel_order returned empty data")
+    return data_list[0]
 
 
 def get_orders(cred: Credential, inst_type: str | None = None) -> list[dict[str, Any]]:
