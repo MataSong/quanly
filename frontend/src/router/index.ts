@@ -37,6 +37,11 @@ const routes = [
         meta: { perm: "page:market" },
         component: () => import("@/views/market/Market.vue"),
       },
+      {
+        path: "trading",
+        meta: { perm: "page:trading" },
+        component: () => import("@/views/trading/Trading.vue"),
+      },
     ],
   },
   { path: "/:pathMatch(.*)*", redirect: "/dashboard" },
