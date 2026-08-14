@@ -10,6 +10,7 @@ PERMISSION_GROUPS: dict[str, dict] = {
             "page:admin": {"zh": "查看权限管理", "en": "View Admin"},
             "page:credentials": {"zh": "密钥管理", "en": "Credentials"},
             "page:market": {"zh": "行情页面", "en": "Market Page"},
+            "page:trading": {"zh": "交易页面", "en": "Trading Page"},
         },
     },
     "credentials": {
@@ -25,6 +26,15 @@ PERMISSION_GROUPS: dict[str, dict] = {
         "label_en": "Market",
         "items": {
             "market:view": {"zh": "查看行情", "en": "View Market Data"},
+        },
+    },
+    "trading": {
+        "label_zh": "交易",
+        "label_en": "Trading",
+        "items": {
+            "trading:view": {"zh": "查看持仓/余额/订单", "en": "View Positions/Balance/Orders"},
+            "trading:place_order": {"zh": "下单", "en": "Place Order"},
+            "trading:cancel": {"zh": "撤单", "en": "Cancel Order"},
         },
     },
 }
