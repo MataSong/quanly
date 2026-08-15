@@ -54,12 +54,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # ---- P1 预留：Celery worker ----
-    # celery:
-    #   build:
-    #     context: ./backend
-    #   command: celery -A config worker -l info
-    #   depends_on: [backend, redis]
 
   # ---- Market Collector — OKX WS 行情采集 ----
   market-collector:
@@ -87,6 +81,32 @@ services:
         condition: service_healthy
       backend:
         condition: service_started
+
+  # ---- Celery Worker (Docker-out-of-Docker) ----
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A config worker -Q strategy,celery -l info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      QUANLY_ENV: ${QUANLY_ENV:-prod}
+      QUANLY_SECRET_KEY: ${QUANLY_SECRET_KEY}
+      QUANLY_CREDENTIALS_ENC_KEY: ${QUANLY_CREDENTIALS_ENC_KEY}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-quanly}
+      POSTGRES_USER: ${POSTGRES_USER:-quanly}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # ---- Frontend + nginx（反代） ----
   nginx:

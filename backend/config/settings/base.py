@@ -121,6 +121,20 @@ SIMPLE_JWT = {
     "SIGNING_KEY": os.environ.get("QUANLY_JWT_SIGNING_KEY", SECRET_KEY),
 }
 
+# ---------------------------------------------------------------------------
+# Celery — broker on Redis DB1 (DB0 is reserved for Channels)
+# ---------------------------------------------------------------------------
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
+
+CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/1"
+CELERY_RESULT_BACKEND = f"redis://{REDIS_HOST}:{REDIS_PORT}/1"
+CELERY_TASK_DEFAULT_QUEUE = "celery"
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = "UTC"
+
 CORS_ALLOWED_ORIGINS = [
     o for o in os.environ.get("QUANLY_CORS_ALLOWED_ORIGINS", "").split(",") if o
 ]

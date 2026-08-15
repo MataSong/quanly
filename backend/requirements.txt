@@ -13,3 +13,5 @@ redis>=5
 python-okx>=0.3
 websockets>=12
 pytest-asyncio>=0.23
+celery[redis]>=5.3
+docker>=7.0
