@@ -33,13 +33,22 @@ class StrategySerializer(drf_serializers.ModelSerializer):
 
 class StrategyRunReadSerializer(drf_serializers.ModelSerializer):
     strategy_name = drf_serializers.CharField(source="strategy.name", read_only=True)
+    credential_label = drf_serializers.SerializerMethodField()
+    credential_env = drf_serializers.SerializerMethodField()
 
     class Meta:
         model = StrategyRun
         fields = [
             "id", "strategy", "strategy_name", "env", "symbol", "params",
             "status", "container_id", "created_at",
+            "credential_label", "credential_env",
         ]
+
+    def get_credential_label(self, obj) -> str:
+        return obj.credential.label if obj.credential else ""
+
+    def get_credential_env(self, obj) -> str:
+        return obj.credential.env if obj.credential else ""
 
 
 class StrategyLogSerializer(drf_serializers.ModelSerializer):
