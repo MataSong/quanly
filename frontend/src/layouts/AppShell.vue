@@ -110,6 +110,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   ArrowDown,
+  Cpu,
   Expand,
   Fold,
   Grid,
@@ -151,6 +152,7 @@ const featureItems = computed<NavItem[]>(() =>
       { to: "/dashboard", icon: Grid, label: t("layout.nav.dashboard"), perm: "page:dashboard" },
       { to: "/market", icon: TrendCharts, label: t("layout.nav.market"), perm: "page:market" },
       { to: "/trading", icon: Money, label: t("layout.nav.trading"), perm: "page:trading" },
+      { to: "/strategy", icon: Cpu, label: t("layout.nav.strategy"), perm: "page:strategy" },
     ] as NavItem[]
   ).filter((i) => auth.hasPerm(i.perm)),
 );
