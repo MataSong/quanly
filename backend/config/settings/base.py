@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "core.credentials",
     "core.market",
     "core.trading",
+    "core.strategy",
 ]
 
 MIDDLEWARE = [

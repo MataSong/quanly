@@ -11,6 +11,7 @@ PERMISSION_GROUPS: dict[str, dict] = {
             "page:credentials": {"zh": "密钥管理", "en": "Credentials"},
             "page:market": {"zh": "行情页面", "en": "Market Page"},
             "page:trading": {"zh": "交易页面", "en": "Trading Page"},
+            "page:strategy": {"zh": "策略页面", "en": "Strategy Page"},
         },
     },
     "credentials": {
@@ -35,6 +36,17 @@ PERMISSION_GROUPS: dict[str, dict] = {
             "trading:view": {"zh": "查看持仓/余额/订单", "en": "View Positions/Balance/Orders"},
             "trading:place_order": {"zh": "下单", "en": "Place Order"},
             "trading:cancel": {"zh": "撤单", "en": "Cancel Order"},
+        },
+    },
+    "strategy": {
+        "label_zh": "策略",
+        "label_en": "Strategy",
+        "items": {
+            "strategy:view": {"zh": "查看策略/运行", "en": "View Strategies/Runs"},
+            "strategy:create": {"zh": "创建策略", "en": "Create Strategy"},
+            "strategy:update": {"zh": "更新策略", "en": "Update Strategy"},
+            "strategy:delete": {"zh": "删除策略", "en": "Delete Strategy"},
+            "strategy:run": {"zh": "启停策略运行", "en": "Start/Stop Strategy Run"},
         },
     },
 }
