@@ -17,7 +17,6 @@ from core.accounts.drf import HasRequiredPermissions, require_perm
 from core.audit.decorators import audit
 from core.strategy.auth import RunTokenAuthentication
 from core.strategy.models import Strategy, StrategyLog, StrategyRun
-from core.strategy.run_token import generate_token, hash_token
 
 logger = logging.getLogger("quanly.strategy")
 
@@ -107,10 +106,8 @@ class StrategyRunListCreateView(APIView):
 
         env = credential.env if credential else StrategyRun.ENV_SIM
 
-        # Generate token — plaintext returned ONCE, only hash persisted.
-        plain_token = generate_token()
-        token_hash = hash_token(plain_token)
-
+        # 创建时不生成 token —— token 由 start(run_strategy task)时才生成并注入容器,
+        # 避免 pending run 持有一个永不生效的 token(会混淆)。
         run = StrategyRun.objects.create(
             user=request.user,
             strategy=strategy,
@@ -118,13 +115,11 @@ class StrategyRunListCreateView(APIView):
             env=env,
             symbol=symbol,
             params=params,
-            run_token_hash=token_hash,
+            run_token_hash="",
             status=StrategyRun.STATUS_PENDING,
         )
 
         data = StrategyRunReadSerializer(run).data
-        # Return the plaintext token exactly ONCE — never stored.
-        data["run_token"] = plain_token
         return Response(data, status=status.HTTP_201_CREATED)
 
 

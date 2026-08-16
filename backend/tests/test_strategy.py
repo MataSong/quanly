@@ -169,19 +169,34 @@ def test_create_run_with_other_users_credential_returns_404(api_client):
 
 @pytest.mark.django_db
 def test_token_cannot_access_another_runs_endpoint(api_client):
-    """Token for run A cannot be used to get logs for run B."""
+    """HTTP 级证据:token_A 调 runner API 只作用于 run_A,绝不触及 run_B。"""
     alice = _make_user("alice_token_mt")
     bob = _make_user("bob_token_mt")
-    run_a, token_a = _make_run(alice, status=StrategyRun.STATUS_RUNNING)
+    cred_a = _make_credential(alice)
+    run_a, token_a = _make_run(alice, credential=cred_a, status=StrategyRun.STATUS_RUNNING)
     run_b, _ = _make_run(bob, status=StrategyRun.STATUS_RUNNING)
 
-    # Token A is valid but run_b belongs to bob — resolve_run returns run_a, not run_b.
-    # The runner API endpoints operate on the authenticated run (from token), not a path param.
-    # So token_a cannot reach run_b's data at all — auth just gives access to run_a.
-    # Verify resolve_run returns run_a, not run_b.
+    # resolve_run 层:token_a 解出 run_a
     resolved = resolve_run(token_a)
-    assert resolved is not None
-    assert resolved.pk == run_a.pk
+    assert resolved is not None and resolved.pk == run_a.pk
+
+    # HTTP 层:用 token_a 下单,StrategyOrder 必须落到 run_a(不是 run_b),
+    # runner API 无 path param,只认 token 绑定的 run —— 横向越权不可能。
+    mock_api = MagicMock()
+    mock_api.place_order.return_value = {
+        "code": "0", "msg": "",
+        "data": [{"ordId": "MT_ORD", "clOrdId": "MT_CL", "sCode": "0", "sMsg": ""}],
+    }
+    with patch("core.trading.okx_ext._trade_api", return_value=mock_api):
+        api_client.credentials(HTTP_X_RUN_TOKEN=token_a)
+        resp = api_client.post("/api/strategy/runner/order", {
+            "side": "buy", "sz": "0.001", "ord_type": "market",
+        }, format="json")
+    assert resp.status_code == 200
+    order = StrategyOrder.objects.get(okx_ord_id="MT_ORD")
+    assert order.run == run_a          # 落到 token 自己的 run
+    assert order.run != run_b          # 绝不触及别人的 run
+    assert order.user == alice
 
 
 @pytest.mark.django_db
@@ -453,7 +468,10 @@ def test_run_strategy_task_updates_token_hash():
     from core.strategy.tasks import run_strategy
 
     user = _make_user("token_refresh_user")
-    run, old_plain_token = _make_run(user, status=StrategyRun.STATUS_PENDING)
+    cred = _make_credential(user)  # M5: run_strategy 要求 run 有 credential,否则提前 abort
+    run, old_plain_token = _make_run(
+        user, credential=cred, status=StrategyRun.STATUS_PENDING
+    )
     old_hash = run.run_token_hash
 
     mock_container = MagicMock()
@@ -469,6 +487,24 @@ def test_run_strategy_task_updates_token_hash():
     assert run.run_token_hash != old_hash
     # Old token must no longer resolve the run
     assert resolve_run(old_plain_token) is None
+
+
+@pytest.mark.django_db
+def test_run_strategy_without_credential_aborts_early(api_client):
+    """M5: run 无 credential 时 run_strategy 直接标 error,不起容器。"""
+    from core.strategy.tasks import run_strategy
+
+    user = _make_user("no_cred_run_user")
+    run, _ = _make_run(user, credential=None, status=StrategyRun.STATUS_PENDING)
+
+    docker_from_env = MagicMock()
+    with patch("docker.from_env", docker_from_env):
+        run_strategy(run.pk)
+
+    run.refresh_from_db()
+    assert run.status == StrategyRun.STATUS_ERROR
+    # 不应尝试起容器
+    docker_from_env.assert_not_called()
 
 
 @pytest.mark.django_db

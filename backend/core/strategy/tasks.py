@@ -36,9 +36,6 @@ def run_strategy(self, run_id: int):
     The plaintext token is used ONCE here and then discarded — it exists
     only in memory during this function and in the container's env.
     """
-    import django
-    django.setup()  # noqa: ensure Django is ready in worker context
-
     from core.strategy.models import StrategyRun
 
     try:
@@ -47,11 +44,19 @@ def run_strategy(self, run_id: int):
         logger.error("run_strategy: StrategyRun %s not found", run_id)
         return
 
+    # M5: 提前 guard —— 无 credential 无法下单,直接标 error 早失败,不起容器。
+    if run.credential is None:
+        logger.error("run_strategy: run=%s has no credential, aborting", run_id)
+        run.status = StrategyRun.STATUS_ERROR
+        run.save(update_fields=["status"])
+        return
+
     # Generate a fresh token and atomically update the hash.
+    # M1: status 先不置 RUNNING —— 等容器真正起来后再置,避免 docker.run 失败前的窗口里
+    #     token 已能通过 resolve_run(status=running)。
     plain_token = generate_token()
     run.run_token_hash = hash_token(plain_token)
-    run.status = StrategyRun.STATUS_RUNNING
-    run.save(update_fields=["run_token_hash", "status"])
+    run.save(update_fields=["run_token_hash"])
 
     # Build the environment dict injected into the container.
     # CRITICAL: only RUN_TOKEN + config — NO credential keys.
@@ -83,12 +88,15 @@ def run_strategy(self, run_id: int):
             cpu_quota=50000,       # 50% of one CPU
             cap_drop=["ALL"],
             read_only=True,
+            security_opt=["no-new-privileges:true"],  # 安全加固:禁止提权
             network=_STRATEGY_NETWORK,
             # Temporary writable tmpfs so the runner can write temp files.
             tmpfs={"/tmp": "size=64m,mode=1777"},
         )
+        # M1: 容器成功启动后才置 RUNNING(token 此时才生效)。
         run.container_id = container.id
-        run.save(update_fields=["container_id"])
+        run.status = StrategyRun.STATUS_RUNNING
+        run.save(update_fields=["container_id", "status"])
         logger.info(
             "run_strategy: container started id=%s run=%s", container.id[:12], run_id
         )
@@ -102,9 +110,6 @@ def run_strategy(self, run_id: int):
 @celery_app.task(bind=True, name="core.strategy.stop_strategy")
 def stop_strategy(self, run_id: int):
     """Stop and remove the Docker container for the given StrategyRun."""
-    import django
-    django.setup()  # noqa
-
     from core.strategy.models import StrategyRun
 
     try:
