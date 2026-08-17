@@ -14,5 +14,8 @@ python manage.py migrate --noinput
 echo "[entrypoint] Seeding admin..."
 python manage.py seed_admin
 
+echo "[entrypoint] Seeding built-in strategies..."
+python manage.py seed_builtin_strategies
+
 echo "[entrypoint] Starting daphne (ASGI)..."
 exec daphne -b 0.0.0.0 -p 8000 config.asgi:application
