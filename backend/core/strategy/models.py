@@ -75,6 +75,8 @@ class StrategyRun(models.Model):
     env = models.CharField(max_length=8, choices=ENV_CHOICES)
     symbol = models.CharField(max_length=32)
     params = models.JSONField(default=dict)
+    # Human-readable run name (optional; auto-generated if empty).
+    name = models.CharField(max_length=128, blank=True, default="")
     # SHA-256 hex digest of the run token — never store the plaintext token.
     run_token_hash = models.CharField(max_length=64, unique=True, db_index=True)
     status = models.CharField(

@@ -37,6 +37,10 @@
         </el-button>
       </div>
       <el-table :data="runs" size="small" border v-loading="runsLoading" empty-text="">
+        <!-- Problem 2: show run name as primary column -->
+        <el-table-column :label="t('strategy.colName')" min-width="160">
+          <template #default="{ row }">{{ row.name || row.strategy_name }}</template>
+        </el-table-column>
         <el-table-column :label="t('strategy.colStrategy')" min-width="120">
           <template #default="{ row }">{{ row.strategy_name }}</template>
         </el-table-column>
@@ -65,8 +69,9 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="200" align="center" fixed="right">
           <template #default="{ row }">
+            <!-- Problem 3: start visible for pending/stopped/error -->
             <el-button
-              v-if="row.status === 'pending'"
+              v-if="['pending', 'stopped', 'error'].includes(row.status)"
               size="small"
               type="success"
               :loading="actionId === row.id && actionType === 'start'"
@@ -110,6 +115,14 @@
       />
 
       <el-form :model="createForm" label-width="120px">
+        <!-- Problem 2: optional run name field -->
+        <el-form-item :label="t('strategy.runName')">
+          <el-input
+            v-model="createForm.name"
+            :placeholder="t('strategy.runNamePlaceholder')"
+          />
+        </el-form-item>
+
         <!-- Strategy select -->
         <el-form-item :label="t('strategy.selectStrategy')">
           <el-select
@@ -155,9 +168,31 @@
           </el-select>
         </el-form-item>
 
-        <!-- Symbol -->
+        <!-- Problem 4: symbol as filterable select, fallback to input -->
         <el-form-item :label="t('strategy.symbol')">
-          <el-input v-model="createForm.symbol" placeholder="BTC-USDT" />
+          <el-select
+            v-if="!symbolFallback"
+            v-model="createForm.symbol"
+            filterable
+            allow-create
+            :loading="symbolsLoading"
+            :placeholder="t('strategy.symbolPlaceholder')"
+            style="width: 100%"
+            default-first-option
+          >
+            <el-option
+              v-for="sym in symbols"
+              :key="sym.instId"
+              :value="sym.instId"
+              :label="sym.instId"
+            />
+          </el-select>
+          <template v-else>
+            <el-input v-model="createForm.symbol" placeholder="BTC-USDT" />
+            <div style="font-size: 12px; color: var(--gray-400); margin-top: 4px">
+              {{ t('strategy.symbolFallbackHint') }}
+            </div>
+          </template>
         </el-form-item>
 
         <!-- dual_ma params -->
@@ -228,7 +263,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
@@ -244,6 +279,7 @@ import {
   type StrategyRun,
   type StrategyLog,
 } from "@/api/strategy";
+import { getSymbols, type Symbol as MarketSymbol } from "@/api/market";
 import { useStrategySocket } from "@/composables/useStrategySocket";
 import { formatApiError } from "@/utils/errors";
 
@@ -285,6 +321,25 @@ async function loadCredentials() {
   }
 }
 
+// ── Symbols (Problem 4: dropdown) ─────────────────────────────────────────────
+
+const symbols = ref<MarketSymbol[]>([]);
+const symbolsLoading = ref(false);
+const symbolFallback = ref(false);  // true = API failed, fallback to text input
+
+async function loadSymbols() {
+  symbolsLoading.value = true;
+  try {
+    symbols.value = await getSymbols();
+    symbolFallback.value = symbols.value.length === 0;
+  } catch {
+    // API failed (e.g. OKX unreachable in Docker) — degrade gracefully to text input
+    symbolFallback.value = true;
+  } finally {
+    symbolsLoading.value = false;
+  }
+}
+
 // ── Runs ──────────────────────────────────────────────────────────────────────
 
 const runs = ref<StrategyRun[]>([]);
@@ -301,6 +356,40 @@ async function loadRuns() {
   }
 }
 
+// ── Problem 1: Short-lived polling after start/stop ───────────────────────────
+//
+// After a start/stop action the container takes a few seconds to spin up/down.
+// We poll loadRuns() every 2 s for up to 10 s (5 ticks) so the status change
+// is reflected automatically without a manual refresh.
+
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+let pollTicksLeft = 0;
+
+function startPolling() {
+  stopPolling(); // clear any existing poll
+  pollTicksLeft = 5; // 5 ticks × 2 s = 10 s
+  pollInterval = setInterval(async () => {
+    pollTicksLeft--;
+    await loadRuns();
+    if (pollTicksLeft <= 0) {
+      stopPolling();
+    }
+  }, 2000);
+}
+
+function stopPolling() {
+  if (pollInterval !== null) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+  pollTicksLeft = 0;
+}
+
+// Cleanup on unmount to prevent leaks
+onUnmounted(() => {
+  stopPolling();
+});
+
 // ── Start / Stop ──────────────────────────────────────────────────────────────
 
 const actionId = ref<number | null>(null);
@@ -313,6 +402,7 @@ async function onStart(row: StrategyRun) {
     await startRun(row.id);
     ElMessage.success(t("strategy.startSuccess"));
     await loadRuns();
+    startPolling(); // Problem 1: auto-poll until status stabilises
   } catch (e) {
     ElMessage.error(formatApiError(e, "strategy"));
   } finally {
@@ -328,6 +418,7 @@ async function onStop(row: StrategyRun) {
     await stopRun(row.id);
     ElMessage.success(t("strategy.stopSuccess"));
     await loadRuns();
+    startPolling(); // Problem 1: auto-poll until status stabilises
   } catch (e) {
     ElMessage.error(formatApiError(e, "strategy"));
   } finally {
@@ -342,11 +433,13 @@ const createDialogVisible = ref(false);
 const creating = ref(false);
 
 const createForm = reactive<{
+  name: string;
   strategy_id: number | null;
   credential_id: number | null;
   symbol: string;
   params: Record<string, unknown>;
 }>({
+  name: "",
   strategy_id: null,
   credential_id: null,
   symbol: "BTC-USDT",
@@ -374,6 +467,7 @@ function openCreateDialog() {
   // Pre-select first strategy and first credential
   if (strategies.value.length) createForm.strategy_id = strategies.value[0].id;
   if (credentials.value.length) createForm.credential_id = credentials.value[0].id;
+  createForm.name = "";
   onStrategyChange();
   createDialogVisible.value = true;
 }
@@ -417,6 +511,7 @@ async function onCreateRun() {
       credential_id: createForm.credential_id!,
       symbol: createForm.symbol.trim(),
       params: { ...createForm.params },
+      name: createForm.name.trim() || undefined,
     });
     ElMessage.success(t("strategy.createSuccess"));
     createDialogVisible.value = false;
@@ -438,7 +533,7 @@ const logContainer = ref<HTMLElement | null>(null);
 
 const logsDialogTitle = computed(() =>
   activeRun.value
-    ? `${t("strategy.logs")} — ${activeRun.value.strategy_name} / ${activeRun.value.symbol}`
+    ? `${t("strategy.logs")} — ${activeRun.value.name || activeRun.value.strategy_name} / ${activeRun.value.symbol}`
     : t("strategy.logs"),
 );
 
@@ -538,7 +633,7 @@ function formatLogTs(ts: string): string {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
-  await Promise.all([loadStrategies(), loadCredentials(), loadRuns()]);
+  await Promise.all([loadStrategies(), loadCredentials(), loadRuns(), loadSymbols()]);
 });
 </script>
 

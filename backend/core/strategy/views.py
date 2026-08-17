@@ -7,6 +7,7 @@ Two families:
 import logging
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import serializers as drf_serializers
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -39,7 +40,7 @@ class StrategyRunReadSerializer(drf_serializers.ModelSerializer):
     class Meta:
         model = StrategyRun
         fields = [
-            "id", "strategy", "strategy_name", "env", "symbol", "params",
+            "id", "name", "strategy", "strategy_name", "env", "symbol", "params",
             "status", "container_id", "created_at",
             "credential_label", "credential_env",
         ]
@@ -95,6 +96,7 @@ class StrategyRunListCreateView(APIView):
         credential_id = request.data.get("credential_id")
         symbol = request.data.get("symbol", "").strip()
         params = request.data.get("params", {})
+        name = (request.data.get("name") or "").strip()
 
         if not strategy_id or not symbol:
             return Response(
@@ -115,6 +117,10 @@ class StrategyRunListCreateView(APIView):
 
         env = credential.env if credential else StrategyRun.ENV_SIM
 
+        # Auto-generate name if not provided
+        if not name:
+            name = f"{strategy.name}-{symbol}-{timezone.now().strftime('%m%d-%H%M')}"
+
         # 创建时不生成 token —— token 由 start(run_strategy task)时才生成并注入容器,
         # 避免 pending run 持有一个永不生效的 token(会混淆)。
         run = StrategyRun.objects.create(
@@ -124,6 +130,7 @@ class StrategyRunListCreateView(APIView):
             env=env,
             symbol=symbol,
             params=params,
+            name=name,
             run_token_hash="",
             status=StrategyRun.STATUS_PENDING,
         )

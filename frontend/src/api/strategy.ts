@@ -12,6 +12,7 @@ export interface Strategy {
 
 export interface StrategyRun {
   id: number;
+  name: string;
   strategy: number;
   strategy_name: string;
   credential: number;
@@ -35,6 +36,7 @@ export interface CreateRunPayload {
   credential_id: number;
   symbol: string;
   params: Record<string, unknown>;
+  name?: string;
 }
 
 // ── API functions ─────────────────────────────────────────────────────────────
