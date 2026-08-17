@@ -58,6 +58,13 @@ PERMISSION_GROUPS: dict[str, dict] = {
             "backtest:create": {"zh": "创建回测", "en": "Create Backtest"},
         },
     },
+    "assets": {
+        "label_zh": "资产",
+        "label_en": "Assets",
+        "items": {
+            "assets:view": {"zh": "查看资产看板", "en": "View Asset Dashboard"},
+        },
+    },
 }
 
 # 扁平所有 code（供 services 交集、serializer 校验用），必须保持是所有权限码的 set

@@ -185,3 +185,17 @@ def get_balance(cred: Credential) -> list[dict[str, Any]]:
         msg = resp.get("msg", "unknown OKX error")
         raise RuntimeError(f"OKX get_account_balance error [{resp.get('code')}]: {msg}")
     return resp.get("data", [])
+
+
+def get_bills(cred: Credential, limit: int = 100) -> list[dict[str, Any]]:
+    """拉取账户账单流水(充值/提现/成交/手续费/资金费等)。真连 OKX,无 mock。
+
+    Returns list of OKX bill dicts.
+    Raises RuntimeError on OKX error.
+    """
+    api = _account_api(cred)
+    resp = api.get_account_bills(limit=str(limit))
+    if resp.get("code") != "0":
+        msg = resp.get("msg") or resp
+        raise RuntimeError(f"OKX get_account_bills error [{resp.get('code')}]: {msg}")
+    return resp.get("data", [])

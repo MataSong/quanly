@@ -19,6 +19,7 @@ urlpatterns += [
     path("api/trading/", include("core.trading.urls")),
     path("api/strategy/", include("core.strategy.urls")),
     path("api/backtest/", include("core.backtest.urls")),
+    path("api/assets/", include("core.assets.urls")),
 ]
 
 if settings.DEBUG:
