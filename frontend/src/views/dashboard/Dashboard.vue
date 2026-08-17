@@ -128,8 +128,8 @@
               {{ calcPercent(row.eqUsd) }}%
             </template>
           </el-table-column>
-          <el-table-column prop="availBal" :label="t('trading.availBal')" align="right" />
-          <el-table-column prop="frozenBal" :label="t('trading.frozenBal')" align="right" />
+          <el-table-column prop="availBal" :label="t('dashboard.availBal')" align="right" />
+          <el-table-column prop="frozenBal" :label="t('dashboard.frozenBal')" align="right" />
         </el-table>
       </div>
 
@@ -260,7 +260,7 @@ function calcPercent(eqUsd: string): number {
   if (netVal <= 0) return 0;
   const n = parseFloat(eqUsd);
   if (isNaN(n)) return 0;
-  return Math.round((n / netVal) * 100);
+  return Math.min(100, Math.max(0, Math.round((n / netVal) * 100)));
 }
 
 function formatTs(ts: string): string {

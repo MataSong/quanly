@@ -115,6 +115,8 @@ export default {
     credential: "密钥",
     envLive: "实盘",
     envSim: "模拟盘",
+    availBal: "可用",
+    frozenBal: "冻结",
   },
   admin: {
     title: "权限管理",

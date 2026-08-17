@@ -117,6 +117,8 @@ const en: typeof zh = {
     credential: "Credential",
     envLive: "Live",
     envSim: "Simulated",
+    availBal: "Available",
+    frozenBal: "Frozen",
   },
   admin: {
     title: "Permissions",
