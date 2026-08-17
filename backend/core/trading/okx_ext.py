@@ -196,6 +196,6 @@ def get_bills(cred: Credential, limit: int = 100) -> list[dict[str, Any]]:
     api = _account_api(cred)
     resp = api.get_account_bills(limit=str(limit))
     if resp.get("code") != "0":
-        msg = resp.get("msg") or resp
+        msg = resp.get("msg", "unknown OKX error")
         raise RuntimeError(f"OKX get_account_bills error [{resp.get('code')}]: {msg}")
     return resp.get("data", [])
