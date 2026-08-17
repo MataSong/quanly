@@ -11,11 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 先拷贝 requirements，利用 Docker layer 缓存
 COPY requirements.txt .
 
-# 用清华镜像安装 Python 依赖（PyPI 官方源可能挂起）
-RUN pip install --no-cache-dir \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple \
-    -r requirements.txt \
-    gunicorn
+# 安装 Python 依赖（PyPI 官方源；国内如需加速可用 pip 环境变量 PIP_INDEX_URL 覆盖）
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 拷贝应用代码
 COPY . .
