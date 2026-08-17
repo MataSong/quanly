@@ -1,0 +1,52 @@
+# ================================================================
+# docker-compose.dev.yml — 开发热重载 override
+#
+# 用法(经 deploy.sh dev 自动调用):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env up -d --build
+#
+# 与生产(docker-compose.yml)的差别:
+#   - backend / celery-worker 挂载 ./backend 源码,改 .py 后重启容器即生效(不重建镜像)
+#   - backend 用 QUANLY_ENV=dev(DEBUG=True),并对外暴露 8000 供 vite 代理
+#   - 新增 frontend-dev 服务:vite dev server(5173, 真 HMR),改 .vue/.ts 秒级生效
+#   - daphne 无内建 autoreload:改后端代码用 ./deploy.sh restart-backend / restart-worker
+#
+# ⚠️ 仅供本地开发调试,勿用于正式对外部署。
+# ================================================================
+services:
+  backend:
+    environment:
+      QUANLY_ENV: dev
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+
+  celery-worker:
+    environment:
+      QUANLY_ENV: dev
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend:/app
+
+  market-collector:
+    environment:
+      QUANLY_ENV: dev
+    volumes:
+      - ./backend:/app
+
+  # ---- 前端 vite dev server(热重载 HMR) ----
+  frontend-dev:
+    image: node:18-alpine
+    working_dir: /app
+    command: sh -c "npm install --registry=https://registry.npmmirror.com && npm run dev -- --host 0.0.0.0"
+    environment:
+      # 让 vite proxy 指向 compose 网络内的后端服务(见 frontend/vite.config.ts)
+      VITE_API_TARGET: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      # 匿名卷:避免宿主空 node_modules 覆盖容器内安装的依赖
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend

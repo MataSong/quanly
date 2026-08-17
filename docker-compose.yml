@@ -27,7 +27,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # ---- Backend（gunicorn + Django） ----
+  # ---- Backend（daphne ASGI + Django） ----
   backend:
     build:
       context: ./backend

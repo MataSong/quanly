@@ -24,6 +24,9 @@ dist/
 .env.local
 *.env
 
+# 部署脚本状态(本机部署记录)
+.deploy_state
+
 # IDE / OS
 .idea/
 .vscode/
