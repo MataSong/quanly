@@ -114,7 +114,20 @@ bootstrap_env() {
     err "缺少 .env.example 模板,无法自举。请确认在 quanly 项目根目录运行。"
     exit 1
   fi
-  cp .env.example "$ENV_FILE"
+  # 预检:当前目录是否可写(git clone 常以 root 属主落地,普通用户写不了)
+  if ! ( : > .env.__wtest 2>/dev/null ); then
+    err "当前目录不可写,无法创建 .env:$(pwd)"
+    echo
+    warn "多为 git clone 时目录属主是 root、而你用普通用户运行导致。任选一种解决:"
+    printf "  1) 把项目目录改成你的账户所有(推荐):\n"
+    printf "     ${C_BLD}sudo chown -R \$(id -un):\$(id -gn) %s${C_RESET}\n" "$(pwd)"
+    printf "     然后重新运行 ${C_BLD}./deploy.sh${C_RESET}\n"
+    printf "  2) 用 sudo 运行整个脚本:\n"
+    printf "     ${C_BLD}sudo ./deploy.sh${C_RESET}\n"
+    exit 1
+  fi
+  rm -f .env.__wtest
+  cp .env.example "$ENV_FILE" || { err "创建 .env 失败(权限?)。见上方提示。"; exit 1; }
   info "已从 .env.example 生成 .env,正在填充随机密钥..."
 
   env_set "QUANLY_SECRET_KEY" "$(gen_random 50)"
@@ -146,7 +159,6 @@ bootstrap_env() {
   chmod 600 "$ENV_FILE"
   ok ".env 已生成并加密保护(chmod 600)"
   echo
-  local ip; ip="$(lan_ip)"
   printf "${C_BLD}${C_YLW}请务必保存以下登录信息(仅显示这一次):${C_RESET}\n"
   printf "  管理员账号: ${C_BLD}%s${C_RESET}\n" "$admin_user"
   if [ "$pw_generated" = "1" ]; then
@@ -154,8 +166,7 @@ bootstrap_env() {
   else
     printf "  管理员密码: ${C_BLD}(你设置的密码)${C_RESET}\n"
   fi
-  printf "  本机访问:   ${C_BLD}http://127.0.0.1:%s${C_RESET}\n" "$nginx_port"
-  printf "  外部访问:   ${C_BLD}http://%s:%s${C_RESET}  ${C_YLW}(同局域网设备用此地址)${C_RESET}\n" "$ip" "$nginx_port"
+  print_urls "$nginx_port"
   echo
 }
 
@@ -191,14 +202,12 @@ validate_env() {
   fi
 }
 
-# 确保 .env 就绪(首次自举 or 校验)。返回 0=首次刚创建 1=已存在
+# 确保 .env 就绪(首次自举 or 校验)。失败会在内部 exit,不靠返回值。
 ensure_env() {
   if [ ! -f "$ENV_FILE" ]; then
     bootstrap_env
-    return 0
   else
     validate_env
-    return 1
   fi
 }
 
@@ -213,7 +222,7 @@ port() {
   printf '%s' "$NGINX_PORT_CACHE"
 }
 
-# 本机局域网 IP(供外部设备访问);查不到则回退 0.0.0.0
+# 本机内网 IP(局域网/云服务器内网)
 lan_ip() {
   local ip=""
   if command -v ipconfig >/dev/null 2>&1; then
@@ -223,6 +232,33 @@ lan_ip() {
     ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   fi
   printf '%s' "${ip:-0.0.0.0}"
+}
+
+# 公网 IP(云服务器用):向外部服务查询;查不到返回空
+public_ip() {
+  local ip=""
+  ip="$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+  [ -z "$ip" ] && ip="$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null || true)"
+  [ -z "$ip" ] && ip="$(curl -s --max-time 5 https://ipinfo.io/ip 2>/dev/null || true)"
+  # 简单校验是否像 IP
+  case "$ip" in
+    *[0-9].[0-9]*.[0-9]*.[0-9]*) printf '%s' "$ip" ;;
+    *) printf '' ;;
+  esac
+}
+
+# 打印访问地址(本机 + 内网 + 公网)
+print_urls() {
+  local p="$1"
+  local lip; lip="$(lan_ip)"
+  local pip; pip="$(public_ip)"
+  printf "  本机访问:   ${C_BLD}http://127.0.0.1:%s${C_RESET}\n" "$p"
+  printf "  内网访问:   ${C_BLD}http://%s:%s${C_RESET}  ${C_YLW}(同内网设备)${C_RESET}\n" "$lip" "$p"
+  if [ -n "$pip" ]; then
+    printf "  公网访问:   ${C_BLD}http://%s:%s${C_RESET}  ${C_YLW}(需云平台安全组放行 %s 端口)${C_RESET}\n" "$pip" "$p" "$p"
+  else
+    printf "  公网访问:   ${C_YLW}(未查到公网IP;若是云服务器,用你的公网IP+端口,并在安全组放行 %s 端口)${C_RESET}\n" "$p"
+  fi
 }
 
 dc()     { docker compose --env-file "$ENV_FILE" "$@"; }
@@ -248,11 +284,9 @@ wait_healthy() {
 print_access() {
   local p; p="$(port)"
   local u; u="$(env_get QUANLY_ADMIN_USER || true)"; u="${u:-admin}"
-  local ip; ip="$(lan_ip)"
   echo
   ok "部署完成!"
-  printf "  本机访问:   ${C_BLD}http://127.0.0.1:%s${C_RESET}\n" "$p"
-  printf "  外部访问:   ${C_BLD}http://%s:%s${C_RESET}  ${C_YLW}(同局域网设备用此地址)${C_RESET}\n" "$ip" "$p"
+  print_urls "$p"
   printf "  管理员账号: ${C_BLD}%s${C_RESET}\n" "$u"
   printf "  (密码见首次安装时的提示或你的 .env)\n\n"
 }
@@ -270,7 +304,7 @@ BACKEND_SERVICES="backend celery-worker market-collector"
 
 do_install() {
   title "全量部署(构建所有镜像)"
-  ensure_env || true
+  ensure_env
   dc up -d --build
   wait_healthy || true
   save_state
@@ -279,7 +313,7 @@ do_install() {
 
 do_update() {
   title "更新部署"
-  ensure_env || true
+  ensure_env
 
   local state="" rebuild_backend=0 rebuild_frontend=0
   [ -f "$STATE_FILE" ] && state="$(cat "$STATE_FILE" 2>/dev/null || true)"
@@ -324,7 +358,7 @@ do_update() {
 
 do_dev() {
   title "开发热重载模式"
-  ensure_env || true
+  ensure_env
   info "启动 dev 栈(挂载源码 + vite HMR)..."
   dc_dev up -d --build
   echo
