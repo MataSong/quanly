@@ -47,6 +47,11 @@ const routes = [
         meta: { perm: "page:strategy" },
         component: () => import("@/views/strategy/Strategy.vue"),
       },
+      {
+        path: "backtest",
+        meta: { perm: "page:backtest" },
+        component: () => import("@/views/backtest/Backtest.vue"),
+      },
     ],
   },
   { path: "/:pathMatch(.*)*", redirect: "/dashboard" },
