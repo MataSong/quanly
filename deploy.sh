@@ -140,10 +140,13 @@ bootstrap_env() {
   env_set "QUANLY_ADMIN_USER" "$admin_user"
   env_set "QUANLY_ADMIN_PASSWORD" "$admin_pw"
   env_set "NGINX_PORT" "$nginx_port"
+  # 放开所有 IP 访问(不限本机);外部设备用本机局域网 IP 访问
+  env_set "QUANLY_ALLOWED_HOSTS" "*"
 
   chmod 600 "$ENV_FILE"
   ok ".env 已生成并加密保护(chmod 600)"
   echo
+  local ip; ip="$(lan_ip)"
   printf "${C_BLD}${C_YLW}请务必保存以下登录信息(仅显示这一次):${C_RESET}\n"
   printf "  管理员账号: ${C_BLD}%s${C_RESET}\n" "$admin_user"
   if [ "$pw_generated" = "1" ]; then
@@ -151,7 +154,8 @@ bootstrap_env() {
   else
     printf "  管理员密码: ${C_BLD}(你设置的密码)${C_RESET}\n"
   fi
-  printf "  访问地址:   ${C_BLD}http://127.0.0.1:%s${C_RESET}\n" "$nginx_port"
+  printf "  本机访问:   ${C_BLD}http://127.0.0.1:%s${C_RESET}\n" "$nginx_port"
+  printf "  外部访问:   ${C_BLD}http://%s:%s${C_RESET}  ${C_YLW}(同局域网设备用此地址)${C_RESET}\n" "$ip" "$nginx_port"
   echo
 }
 
@@ -209,6 +213,18 @@ port() {
   printf '%s' "$NGINX_PORT_CACHE"
 }
 
+# 本机局域网 IP(供外部设备访问);查不到则回退 0.0.0.0
+lan_ip() {
+  local ip=""
+  if command -v ipconfig >/dev/null 2>&1; then
+    ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+  fi
+  if [ -z "$ip" ] && command -v hostname >/dev/null 2>&1; then
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  fi
+  printf '%s' "${ip:-0.0.0.0}"
+}
+
 dc()     { docker compose --env-file "$ENV_FILE" "$@"; }
 dc_dev() { docker compose -f docker-compose.yml -f "$COMPOSE_DEV" --env-file "$ENV_FILE" "$@"; }
 
@@ -232,9 +248,11 @@ wait_healthy() {
 print_access() {
   local p; p="$(port)"
   local u; u="$(env_get QUANLY_ADMIN_USER || true)"; u="${u:-admin}"
+  local ip; ip="$(lan_ip)"
   echo
   ok "部署完成!"
-  printf "  访问地址:   ${C_BLD}http://127.0.0.1:%s${C_RESET}\n" "$p"
+  printf "  本机访问:   ${C_BLD}http://127.0.0.1:%s${C_RESET}\n" "$p"
+  printf "  外部访问:   ${C_BLD}http://%s:%s${C_RESET}  ${C_YLW}(同局域网设备用此地址)${C_RESET}\n" "$ip" "$p"
   printf "  管理员账号: ${C_BLD}%s${C_RESET}\n" "$u"
   printf "  (密码见首次安装时的提示或你的 .env)\n\n"
 }
