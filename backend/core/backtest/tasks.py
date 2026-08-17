@@ -11,7 +11,7 @@ from core.backtest.engine import run as engine_run
 logger = logging.getLogger("quanly.backtest")
 
 
-@celery_app.task(bind=True, name="core.backtest.run_backtest")
+@celery_app.task(bind=True, name="core.backtest.run_backtest", max_retries=0)
 def run_backtest(self, backtest_id: int) -> None:
     """Fetch historical candles from OKX, run the backtest engine, persist results.
 
@@ -45,6 +45,13 @@ def run_backtest(self, backtest_id: int) -> None:
             start_ts=bt.start_ts,
             end_ts=bt.end_ts,
         )
+
+        # 拉不到历史数据 → 报错(区分"OKX无数据/连不上"与"真的无信号"),不静默成 done。
+        if not candles:
+            raise RuntimeError(
+                f"No historical candles for {bt.symbol} {bt.bar} in the given range "
+                "(OKX unreachable or no data)."
+            )
 
         result = engine_run(
             code_ref=bt.strategy.code_ref,

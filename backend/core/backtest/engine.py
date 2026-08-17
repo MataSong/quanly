@@ -92,6 +92,9 @@ def run(
     # on_tick decide internally via compute_signal (it returns None if not ready).
     start_index = 1  # need at least index 1 so bar i+1 exists for fill
 
+    # 净值曲线从第 0 根 bar 的起始净值(纯现金)起,让曲线覆盖完整区间起点。
+    equity_curve.append({"ts": int(candles[0]["ts"]), "equity": round(cash, 8)})
+
     for i in range(start_index, n):
         ctx.advance(i)
         ctx._clear_signals()

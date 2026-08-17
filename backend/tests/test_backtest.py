@@ -204,14 +204,14 @@ def test_engine_has_buy_and_sell_trades():
 
 
 def test_engine_equity_curve_length():
-    """equity_curve has one entry per bar from start_index to end (n-1 entries)."""
+    """equity_curve 含 bar0 初始净值点 + 每根后续 bar 一个点 = n 个点。"""
     from core.backtest.engine import run
 
     candles = _build_crossover_candles()
     result = run("dual_ma", {"fast_period": 3, "slow_period": 5, "sz": "0.01"}, candles)
 
-    # Engine iterates i in range(1, n), so equity_curve has n-1 entries.
-    assert len(result["equity_curve"]) == len(candles) - 1
+    # bar0 起始净值点 + range(1,n) 每根一个点 = n 个点。
+    assert len(result["equity_curve"]) == len(candles)
 
 
 def test_engine_fill_uses_next_bar_open():
