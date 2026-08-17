@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "core.market",
     "core.trading",
     "core.strategy",
+    "core.backtest",
 ]
 
 MIDDLEWARE = [

@@ -12,6 +12,7 @@ PERMISSION_GROUPS: dict[str, dict] = {
             "page:market": {"zh": "行情页面", "en": "Market Page"},
             "page:trading": {"zh": "交易页面", "en": "Trading Page"},
             "page:strategy": {"zh": "策略页面", "en": "Strategy Page"},
+            "page:backtest": {"zh": "回测页面", "en": "Backtest Page"},
         },
     },
     "credentials": {
@@ -47,6 +48,14 @@ PERMISSION_GROUPS: dict[str, dict] = {
             "strategy:update": {"zh": "更新策略", "en": "Update Strategy"},
             "strategy:delete": {"zh": "删除策略", "en": "Delete Strategy"},
             "strategy:run": {"zh": "启停策略运行", "en": "Start/Stop Strategy Run"},
+        },
+    },
+    "backtest": {
+        "label_zh": "回测",
+        "label_en": "Backtest",
+        "items": {
+            "backtest:view": {"zh": "查看回测", "en": "View Backtests"},
+            "backtest:create": {"zh": "创建回测", "en": "Create Backtest"},
         },
     },
 }

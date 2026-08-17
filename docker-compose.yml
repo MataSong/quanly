@@ -88,7 +88,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: celery -A config worker -Q strategy,celery -l info
+    command: celery -A config worker -Q strategy,celery,backtest -l info
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
