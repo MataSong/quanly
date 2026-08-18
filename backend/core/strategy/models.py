@@ -15,6 +15,24 @@ class Strategy(models.Model):
         (SOURCE_UPLOADED, "Uploaded"),
     ]
 
+    VISIBILITY_PRIVATE = "private"
+    VISIBILITY_PUBLIC = "public"
+    VISIBILITY_CHOICES = [
+        (VISIBILITY_PRIVATE, "Private"),
+        (VISIBILITY_PUBLIC, "Public"),
+    ]
+
+    STATUS_DRAFT = "draft"
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_PENDING, "Pending"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+    ]
+
     name = models.CharField(max_length=128)
     source_type = models.CharField(
         max_length=16, choices=SOURCE_CHOICES, default=SOURCE_BUILTIN
@@ -24,6 +42,25 @@ class Strategy(models.Model):
     default_params = models.JSONField(default=dict)
     is_builtin = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # ── 商城字段 ──────────────────────────────────────────────────────────────
+    # 内置策略 owner=None;用户参数化实例 owner=创建者。
+    owner = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.CASCADE, related_name="strategies"
+    )
+    # 用户参数化实例指向的内置模板 code_ref(内置策略自身此字段为空)。
+    template_ref = models.CharField(max_length=128, blank=True, default="")
+    # 用户调好的参数(内置策略用 default_params)。
+    params = models.JSONField(default=dict)
+    visibility = models.CharField(
+        max_length=16, choices=VISIBILITY_CHOICES, default=VISIBILITY_PRIVATE
+    )
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT
+    )
+    description = models.TextField(blank=True, default="")
+    reject_reason = models.TextField(blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         app_label = "core_strategy"
