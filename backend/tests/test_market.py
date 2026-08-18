@@ -327,10 +327,10 @@ async def test_ws_valid_token_connects_and_receives_broadcast():
     connected, _ = await communicator.connect()
     assert connected, "Expected WS connection to succeed with valid token"
 
-    # Broadcast a market_update to the group
+    # Broadcast a market_update to the group — group now includes bar (default 1m)
     channel_layer = get_channel_layer()
     await channel_layer.group_send(
-        "market_BTC-USDT",
+        "market_BTC-USDT_1m",
         {
             "type": "market.update",
             "symbol": "BTC-USDT",

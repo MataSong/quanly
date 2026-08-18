@@ -6,7 +6,9 @@ Authentication:
   - JWT token taken from query string param `token`
   - Validated via SimpleJWT; invalid/missing token → close(4001)
 
-Group naming: market_<symbol>  (e.g. market_BTC-USDT)
+Group naming: market_<symbol>_<bar>  (e.g. market_BTC-USDT_1m)
+Each (symbol, bar) pair gets its own group so candle updates for different
+bar sizes never cross-contaminate each other.
 The run_market_collector management command broadcasts to these groups.
 
 Redis DB2 active subscription registry:
@@ -70,7 +72,9 @@ class MarketConsumer(AsyncWebsocketConsumer):
         raw_symbol = self.scope["url_route"]["kwargs"].get("symbol", "BTC-USDT")
         self.symbol = _sanitize_symbol(raw_symbol)
         self.bar = params.get("bar", ["1m"])[0]
-        self.group_name = f"market_{self.symbol}"
+        # group includes bar so candle updates for different bar sizes
+        # are routed to separate groups and never cross-contaminate.
+        self.group_name = f"market_{self.symbol}_{self.bar}"
         self._active_member = f"{self.symbol}:{self.bar}"
         self._heartbeat_task: asyncio.Task | None = None
 

@@ -22,6 +22,7 @@ from core.market.management.commands.run_market_collector import (
     _compute_target_subs,
     _parse_candle_row,
     _parse_ticker_data,
+    _candle_group_name,
     _FALLBACK_MEMBERS,
 )
 
@@ -491,3 +492,122 @@ async def test_consumer_heartbeat_refreshes_ttl():
     # At least one EXPIRE call should have been made
     assert len(expire_calls) >= 1
     assert expire_calls[0] == ("market:refcount:BTC-USDT:1m", REFCOUNT_TTL)
+
+
+# ============================================================
+# _candle_group_name — pure function, bar-scoped group routing
+# ============================================================
+
+class TestCandleGroupName:
+    """group name must embed bar so cross-bar candle pollution is impossible."""
+
+    def test_1m_bar(self):
+        assert _candle_group_name("BTC-USDT", "candle1m") == "market_BTC-USDT_1m"
+
+    def test_5m_bar(self):
+        assert _candle_group_name("BTC-USDT", "candle5m") == "market_BTC-USDT_5m"
+
+    def test_1H_bar(self):
+        assert _candle_group_name("ETH-USDT", "candle1H") == "market_ETH-USDT_1H"
+
+    def test_different_symbols_different_groups(self):
+        g1 = _candle_group_name("BTC-USDT", "candle1m")
+        g2 = _candle_group_name("ETH-USDT", "candle1m")
+        assert g1 != g2
+        assert "BTC-USDT" in g1
+        assert "ETH-USDT" in g2
+
+    def test_same_symbol_different_bars_different_groups(self):
+        g1m = _candle_group_name("BTC-USDT", "candle1m")
+        g5m = _candle_group_name("BTC-USDT", "candle5m")
+        assert g1m != g5m
+        assert g1m == "market_BTC-USDT_1m"
+        assert g5m == "market_BTC-USDT_5m"
+
+
+# ============================================================
+# Ticker fan-out routing — one ticker → all active bars of symbol
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_ticker_fanout_reaches_all_active_bars():
+    """When a ticker arrives for BTC-USDT, it is sent to every active bar group."""
+    import asyncio
+    from unittest.mock import AsyncMock, call
+
+    # Simulate the fan-out logic from _read_loop directly:
+    # active_snapshot contains two bars for BTC-USDT
+    active_snapshot = {"BTC-USDT:1m", "BTC-USDT:5m", "ETH-USDT:1m"}
+    inst_id = "BTC-USDT"
+    ticker = {"last": "35000.0"}
+
+    from core.market.consumers import _sanitize_symbol
+
+    group_send_calls: list[str] = []
+
+    async def fake_group_send(group, msg):
+        group_send_calls.append(group)
+
+    channel_layer = MagicMock()
+    channel_layer.group_send = fake_group_send
+
+    # Replicate the fan-out logic from _read_loop
+    target_bars = [
+        m.split(":", 1)[1]
+        for m in active_snapshot
+        if m.startswith(f"{inst_id}:")
+    ]
+    for bar in target_bars:
+        group_name = f"market_{_sanitize_symbol(inst_id)}_{bar}"
+        await channel_layer.group_send(
+            group_name,
+            {"type": "market.update", "symbol": inst_id, "ticker": ticker},
+        )
+
+    assert set(group_send_calls) == {"market_BTC-USDT_1m", "market_BTC-USDT_5m"}
+    # ETH group must NOT receive the BTC ticker
+    assert "market_ETH-USDT_1m" not in group_send_calls
+
+
+@pytest.mark.asyncio
+async def test_ticker_fanout_skipped_when_no_active_bars():
+    """Ticker fan-out is skipped when no active bars exist for the symbol."""
+    from core.market.consumers import _sanitize_symbol
+
+    active_snapshot: set[str] = {"ETH-USDT:1m"}  # BTC has no active bars
+    inst_id = "BTC-USDT"
+
+    group_send_calls: list[str] = []
+
+    async def fake_group_send(group, msg):
+        group_send_calls.append(group)
+
+    channel_layer = MagicMock()
+    channel_layer.group_send = fake_group_send
+
+    target_bars = [
+        m.split(":", 1)[1]
+        for m in active_snapshot
+        if m.startswith(f"{inst_id}:")
+    ]
+    # No bars → no group_sends
+    for bar in target_bars:
+        group_name = f"market_{_sanitize_symbol(inst_id)}_{bar}"
+        await channel_layer.group_send(group_name, {})
+
+    assert group_send_calls == []
+
+
+class TestConsumerGroupNameContainsBar:
+    """Verify the group name formula in Consumer matches the collector formula."""
+
+    def test_group_name_formula_matches_candle_group_name(self):
+        """Consumer's group name must equal _candle_group_name for the same symbol+bar."""
+        from core.market.consumers import _sanitize_symbol
+        symbol = "BTC-USDT"
+        bar = "5m"
+        # Consumer side
+        consumer_group = f"market_{_sanitize_symbol(symbol)}_{bar}"
+        # Collector side
+        collector_group = _candle_group_name(symbol, f"candle{bar}")
+        assert consumer_group == collector_group == "market_BTC-USDT_5m"

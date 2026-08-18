@@ -109,6 +109,21 @@ def _compute_target_subs(
     return target
 
 
+def _candle_group_name(inst_id: str, channel: str) -> str:
+    """Return the channel-layer group name for a candle push.
+
+    channel is the OKX channel name, e.g. "candle1m", "candle5m", "candle1H".
+    The group name includes the bar so that consumers for different bar sizes
+    are in separate groups and never receive cross-bar candle data.
+
+    Examples:
+        _candle_group_name("BTC-USDT", "candle1m")  → "market_BTC-USDT_1m"
+        _candle_group_name("ETH-USDT", "candle5m")  → "market_ETH-USDT_5m"
+    """
+    bar = channel[len("candle"):]  # strip "candle" prefix
+    return f"market_{_sanitize_symbol(inst_id)}_{bar}"
+
+
 def _parse_candle_row(row: list) -> dict | None:
     """Parse a single OKX candle data row into a candle dict.
 
@@ -169,6 +184,11 @@ async def _run(extra_members: set[str]) -> None:
                 # Shared mutable state between the two coroutines
                 subscribed: set[tuple[str, str]] = set()
                 subscribed_lock = asyncio.Lock()
+                # Snapshot of live active members (symbol:bar strings) updated
+                # each sync cycle; used by _read_loop to fan out ticker to all
+                # active bars of a symbol.
+                active_snapshot: set[str] = set()
+                active_snapshot_lock = asyncio.Lock()
 
                 # ── sub-coroutine 1: read loop ─────────────────────────────
 
@@ -187,9 +207,10 @@ async def _run(extra_members: set[str]) -> None:
                         channel = arg.get("channel", "")
                         inst_id = arg.get("instId", "")
                         data_rows = msg.get("data", [])
-                        group_name = f"market_{_sanitize_symbol(inst_id)}"
 
                         if channel.startswith("candle") and data_rows:
+                            # Route candle to the specific bar group only
+                            group_name = _candle_group_name(inst_id, channel)
                             for row in data_rows:
                                 try:
                                     candle = _parse_candle_row(row)
@@ -209,20 +230,42 @@ async def _run(extra_members: set[str]) -> None:
                                     )
 
                         elif channel == "tickers":
+                            # Fan out ticker to all active bars for this symbol.
+                            # Each bar has its own group (market_<symbol>_<bar>) so
+                            # every open chart for this symbol gets the latest price.
                             try:
                                 ticker = _parse_ticker_data(data_rows)
-                                if ticker is not None:
-                                    await channel_layer.group_send(
-                                        group_name,
-                                        {
-                                            "type": "market.update",
-                                            "symbol": inst_id,
-                                            "ticker": ticker,
-                                        },
-                                    )
+                                if ticker is None:
+                                    continue
+                                async with active_snapshot_lock:
+                                    snapshot = set(active_snapshot)
+                                target_bars = [
+                                    m.split(":", 1)[1]
+                                    for m in snapshot
+                                    if m.startswith(f"{inst_id}:")
+                                ]
+                                if not target_bars:
+                                    # No active viewers; skip (candle still drives ticks)
+                                    continue
+                                for bar in target_bars:
+                                    group_name = f"market_{_sanitize_symbol(inst_id)}_{bar}"
+                                    try:
+                                        await channel_layer.group_send(
+                                            group_name,
+                                            {
+                                                "type": "market.update",
+                                                "symbol": inst_id,
+                                                "ticker": ticker,
+                                            },
+                                        )
+                                    except Exception as exc:
+                                        logger.warning(
+                                            "channel_layer.group_send (ticker/%s) error: %s",
+                                            bar, exc,
+                                        )
                             except Exception as exc:
                                 logger.warning(
-                                    "channel_layer.group_send (ticker) error: %s", exc
+                                    "ticker fan-out error: %s", exc
                                 )
 
                 # ── sub-coroutine 2: subscription sync loop ────────────────
@@ -275,6 +318,11 @@ async def _run(extra_members: set[str]) -> None:
                                     redis_client = None  # force reconnect next iteration
 
                             target = _compute_target_subs(active, extra_members)
+
+                            # Update snapshot for ticker fan-out in _read_loop
+                            async with active_snapshot_lock:
+                                active_snapshot.clear()
+                                active_snapshot.update(active)
 
                             async with subscribed_lock:
                                 to_add = target - subscribed
