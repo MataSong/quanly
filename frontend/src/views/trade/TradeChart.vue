@@ -361,12 +361,18 @@ async function loadCandles() {
 // ---------------------------------------------------------------- WS realtime
 
 let wsDisconnect: (() => void) | null = null;
+let stopConnectedWatch: (() => void) | null = null;
 
 function startSocket() {
   if (wsDisconnect) {
     wsDisconnect();
     wsDisconnect = null;
     wsConnected.value = false;
+  }
+  // 停掉上一次的 connected watcher,避免每次切 symbol/bar 累积 watcher(泄漏)
+  if (stopConnectedWatch) {
+    stopConnectedWatch();
+    stopConnectedWatch = null;
   }
   const { connected, disconnect } = useMarketSocket(store.symbol, store.bar, {
     onCandle: (candle: Candle) => {
@@ -406,7 +412,7 @@ function startSocket() {
       latestPrice.value = formatPrice(closeVal);
     },
   });
-  watch(connected, (v) => {
+  stopConnectedWatch = watch(connected, (v) => {
     wsConnected.value = v;
   }, { immediate: true });
   wsDisconnect = disconnect;
@@ -474,6 +480,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (wsDisconnect) wsDisconnect();
+  if (stopConnectedWatch) stopConnectedWatch();
   resizeObserver?.disconnect();
   chart?.remove();
   chart = null;

@@ -14,6 +14,15 @@
       show-icon
       class="live-banner"
     />
+    <!-- Sim-env info banner -->
+    <el-alert
+      v-else-if="store.credentialEnv === 'sim'"
+      :title="t('trading.simBanner')"
+      type="info"
+      :closable="false"
+      show-icon
+      class="live-banner"
+    />
 
     <!-- Top shared selector bar -->
     <div class="selector-bar">
@@ -63,7 +72,7 @@
             v-for="cred in credentials"
             :key="cred.id"
             :value="cred.id"
-            :label="cred.label"
+            :label="`${cred.label} · ${cred.api_key_masked}`"
           >
             <span>{{ cred.label }}</span>
             <el-tag
@@ -73,6 +82,9 @@
             >
               {{ cred.env === "live" ? t("trading.envLive") : t("trading.envSim") }}
             </el-tag>
+            <span style="color: var(--gray-400); margin-left: 6px; font-size: 12px">
+              {{ cred.api_key_masked }}
+            </span>
           </el-option>
         </el-select>
       </div>
