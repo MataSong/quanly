@@ -307,9 +307,12 @@ function startSocket() {
   }
   const { connected, disconnect } = useMarketSocket(
     selectedSymbol.value,
-    (candle: Candle) => {
-      if (!series) return;
-      series.update(toChartBar(candle));
+    selectedBar.value,
+    {
+      onCandle: (candle: Candle) => {
+        if (!series) return;
+        series.update(toChartBar(candle));
+      },
     },
   );
   // Watch connected ref
