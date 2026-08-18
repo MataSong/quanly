@@ -638,3 +638,27 @@ def test_detail_performance_aggregation(api_client):
     perf = resp.data["performance"]
     assert perf["run_count"] == 2
     assert perf["user_count"] == 2
+
+
+@pytest.mark.django_db
+def test_run_uses_strategy_params(api_client):
+    """用户参数化策略 run 时,run.params 落地为 strategy.params(容器会用它跑内置模板)。"""
+    from core.strategy.models import StrategyRun
+
+    _builtin_strategy()
+    user = _make_user("param_flow", ["strategy:run"])
+    strat = _make_user_strategy(
+        user, name="Param Flow",
+        params={"fast_period": 7, "slow_period": 21, "sz": "0.05"},
+    )
+    api_client.force_authenticate(user)
+    resp = api_client.post("/api/strategy/runs", {
+        "strategy_id": strat.pk,
+        "symbol": "BTC-USDT",
+    }, format="json")
+    assert resp.status_code == 201
+    run = StrategyRun.objects.get(pk=resp.data["id"])
+    # 策略参数落地到 run,不被前端空 params 覆盖
+    assert run.params == {"fast_period": 7, "slow_period": 21, "sz": "0.05"}
+    # tasks 会用 template_ref 作 CODE_REF 跑内置代码
+    assert run.strategy.template_ref == "dual_ma"

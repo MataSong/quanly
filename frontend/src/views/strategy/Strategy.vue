@@ -159,8 +159,8 @@
           </template>
         </el-form-item>
 
-        <!-- dual_ma params -->
-        <template v-if="isDualMa">
+        <!-- dual_ma params — 仅内置策略可在运行页调参 -->
+        <template v-if="showParamForm">
           <el-form-item :label="t('strategy.fastPeriod')">
             <el-input-number v-model="createForm.params.fast_period" :min="1" :max="200" style="width: 100%" />
           </el-form-item>
@@ -171,6 +171,12 @@
             <el-input v-model="createForm.params.sz" placeholder="0.01" />
           </el-form-item>
         </template>
+        <!-- 用户参数化策略:参数已固化,运行页不可改 -->
+        <el-form-item v-else-if="isDualMa && !isBuiltinStrategy">
+          <div style="font-size: 12px; color: var(--gray-400)">
+            {{ t('strategy.userParamsFixedHint') }}
+          </div>
+        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -427,6 +433,16 @@ const isDualMa = computed<boolean>(() => {
     false
   );
 });
+
+// 选中的是否内置策略(owner 空/is_builtin)。用户参数化实例的参数已固化,
+// 运行时后端用 strategy.params,前端不应让用户在运行页改参(会误导:改了不生效)。
+const isBuiltinStrategy = computed<boolean>(() => {
+  const s = strategies.value.find((s) => s.id === createForm.strategy_id);
+  return !!(s && (s.is_builtin || !s.owner_username));
+});
+
+// 仅内置策略允许在运行页编辑参数(用户策略参数在"我的策略"里编辑)。
+const showParamForm = computed<boolean>(() => isDualMa.value && isBuiltinStrategy.value);
 
 function onStrategyChange() {
   const s = strategies.value.find((x) => x.id === createForm.strategy_id);

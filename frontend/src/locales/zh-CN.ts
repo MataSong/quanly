@@ -417,6 +417,7 @@ export default {
     runNamePlaceholder: "可选，留空自动生成（策略名-交易对-时间）",
     selectStrategy: "选择策略",
     selectStrategyHint: "请选择一个策略",
+    userParamsFixedHint: "该策略参数已固定，如需调整请到「我的策略」编辑",
     selectCredential: "选择密钥",
     selectCredentialHint: "请选择一个密钥",
     symbol: "交易对",

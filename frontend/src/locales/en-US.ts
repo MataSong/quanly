@@ -419,6 +419,7 @@ const en: typeof zh = {
     runNamePlaceholder: "Optional — auto-generated if blank (strategy-symbol-time)",
     selectStrategy: "Select strategy",
     selectStrategyHint: "Please select a strategy",
+    userParamsFixedHint: "This strategy's parameters are fixed; edit them under \"My Strategies\"",
     selectCredential: "Select credential",
     selectCredentialHint: "Please select a credential",
     symbol: "Symbol",
