@@ -17,7 +17,7 @@
         :label="col.label"
         :width="col.width"
         :min-width="col.minWidth"
-        :align="col.align || 'center'"
+        :align="col.align || 'left'"
         :fixed="col.fixed"
       >
         <template #default="scope">
