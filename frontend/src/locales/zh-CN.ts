@@ -50,6 +50,7 @@ export default {
   },
   layout: {
     appTitle: "量化交易平台",
+    menu: "菜单",
     collapseSidebar: "收起侧边栏",
     expandSidebar: "展开侧边栏",
     logout: "退出登录",

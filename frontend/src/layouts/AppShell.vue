@@ -2,6 +2,9 @@
   <div class="app-shell" :class="{ 'sidebar-collapsed': collapsed }">
     <!-- Topbar -->
     <header class="topbar">
+      <button class="hamburger" @click="drawerOpen = true" :aria-label="t('layout.menu')">
+        <el-icon :size="20"><Menu /></el-icon>
+      </button>
       <div class="brand">
         <BrandLogo :size="30" variant="light" />
         <div class="brand-text">
@@ -26,7 +29,7 @@
       </el-dropdown>
     </header>
 
-    <!-- Sidebar -->
+    <!-- Sidebar (PC) -->
     <aside class="sidebar" :class="{ collapsed }">
       <div class="nav-groups">
         <div class="group" v-if="featureItems.length">
@@ -92,6 +95,66 @@
       </div>
     </aside>
 
+    <!-- Sidebar (手机抽屉) -->
+    <el-drawer
+      v-model="drawerOpen"
+      direction="ltr"
+      :with-header="false"
+      size="256px"
+      class="mobile-drawer"
+    >
+      <div class="drawer-nav">
+        <div class="drawer-brand">
+          <BrandLogo :size="26" variant="light" />
+          <span class="drawer-brand-title">{{ t("layout.appTitle") }}</span>
+        </div>
+        <div class="nav-groups">
+          <div class="group" v-if="featureItems.length">
+            <div class="group-title">{{ t("layout.groups.features") }}</div>
+            <router-link
+              v-for="item in featureItems"
+              :key="item.to"
+              class="item"
+              :to="item.to"
+              active-class="active"
+              @click="drawerOpen = false"
+            >
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
+            </router-link>
+          </div>
+          <div class="group" v-if="accountItems.length">
+            <div class="group-title">{{ t("layout.groups.account") }}</div>
+            <router-link
+              v-for="item in accountItems"
+              :key="item.to"
+              class="item"
+              :to="item.to"
+              active-class="active"
+              @click="drawerOpen = false"
+            >
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
+            </router-link>
+          </div>
+          <div class="group" v-if="systemItems.length">
+            <div class="group-title">{{ t("layout.groups.system") }}</div>
+            <router-link
+              v-for="item in systemItems"
+              :key="item.to"
+              class="item"
+              :to="item.to"
+              active-class="active"
+              @click="drawerOpen = false"
+            >
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
+            </router-link>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
     <!-- Main content -->
     <main class="main">
       <div class="main-inner">
@@ -116,6 +179,7 @@ import {
   Fold,
   Grid,
   Key,
+  Menu,
   Money,
   Setting,
   TrendCharts,
@@ -131,6 +195,9 @@ const router = useRouter();
 
 const SIDEBAR_KEY = "quanly.sidebar_collapsed";
 const collapsed = ref(localStorage.getItem(SIDEBAR_KEY) === "1");
+
+// 手机抽屉开关
+const drawerOpen = ref(false);
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value;
@@ -181,7 +248,9 @@ async function signOut() {
 }
 </script>
 
-<style scoped>
+<style scoped lang="scss">
+@use "@/styles/mixins" as *;
+
 .app-shell {
   display: grid;
   grid-template-columns: 240px 1fr;
@@ -209,6 +278,24 @@ async function signOut() {
   color: #fff;
   box-shadow: var(--shadow-sm);
   z-index: 20;
+}
+
+/* 汉堡按钮:仅手机显示 */
+.hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: calc(var(--space-2) * -1);
+  border: none;
+  background: transparent;
+  color: #fff;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.hamburger:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 .brand {
   display: flex;
@@ -383,4 +470,58 @@ async function signOut() {
 }
 .fade-enter-from,
 .fade-leave-to { opacity: 0; }
+
+/* 手机抽屉内导航样式(复用侧边栏视觉) */
+.drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-3);
+}
+.drawer-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--gray-200);
+}
+.drawer-brand-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--gray-800);
+}
+.drawer-nav .item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--gray-700);
+  font-size: var(--font-size-base);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+.drawer-nav .item:hover { background: var(--gray-100); }
+.drawer-nav .item.active {
+  background: rgba(99, 91, 255, 0.08);
+  color: var(--brand-primary);
+  border-left-color: var(--brand-primary);
+  font-weight: 500;
+}
+
+/* ============ 手机端(≤768px) ============ */
+@include mobile {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "top"
+      "main";
+  }
+  .hamburger { display: inline-flex; }
+  .sidebar { display: none; }        /* PC 侧边栏隐藏,导航移到抽屉 */
+  .topbar { padding: 0 var(--space-4); }
+  .main-inner { padding: var(--space-4); }
+  .brand-title { font-size: var(--font-size-base); }
+}
 </style>

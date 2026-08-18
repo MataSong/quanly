@@ -52,6 +52,7 @@ const en: typeof zh = {
   },
   layout: {
     appTitle: "Quanly Trading Platform",
+    menu: "Menu",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     logout: "Sign out",

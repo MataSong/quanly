@@ -1,0 +1,30 @@
+// ================================================================
+// 响应式断点 mixin
+// 组件里用法:  <style lang="scss">  @use "@/styles/mixins" as *;
+//              .foo { @include mobile { ... } }
+// ================================================================
+
+// 断点分界(与 useBreakpoint.ts 保持一致)
+$bp-mobile: 768px; // 手机/PC 主分界
+$bp-narrow: 480px; // 超窄手机
+
+// 手机及以下(≤768px)
+@mixin mobile {
+  @media (max-width: $bp-mobile) {
+    @content;
+  }
+}
+
+// 超窄手机(≤480px)
+@mixin narrow {
+  @media (max-width: $bp-narrow) {
+    @content;
+  }
+}
+
+// PC(>768px),需要仅 PC 生效的样式时用
+@mixin desktop {
+  @media (min-width: ($bp-mobile + 1px)) {
+    @content;
+  }
+}
