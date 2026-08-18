@@ -23,10 +23,16 @@ class Command(BaseCommand):
                 "slow_period": 20,
                 "sz": "0.001",
             },
+            # 商城元数据:内置策略 owner=None,直接上架(approved+public)。
+            "owner": None,
+            "status": Strategy.STATUS_APPROVED,
+            "visibility": Strategy.VISIBILITY_PUBLIC,
+            "description": "经典双均线金叉/死叉策略:快线上穿慢线买入,下穿卖出。",
         }
 
-        obj, created = Strategy.objects.get_or_create(
+        obj, created = Strategy.objects.update_or_create(
             code_ref="dual_ma",
+            source_type=Strategy.SOURCE_BUILTIN,
             defaults=defaults,
         )
 
@@ -35,4 +41,4 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f"Created built-in strategy: {obj.name} (id={obj.pk})")
             )
         else:
-            self.stdout.write(f"Built-in strategy already exists: {obj.name} (id={obj.pk})")
+            self.stdout.write(f"Updated built-in strategy: {obj.name} (id={obj.pk})")

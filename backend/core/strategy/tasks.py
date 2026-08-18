@@ -63,7 +63,8 @@ def run_strategy(self, run_id: int):
     container_env = {
         "RUN_TOKEN": plain_token,          # only safe token, not a key
         "BACKEND_URL": _BACKEND_URL,
-        "CODE_REF": run.strategy.code_ref,
+        # 用户参数化实例跑 template_ref 指向的内置模板代码;内置策略用自身 code_ref。
+        "CODE_REF": run.strategy.template_ref or run.strategy.code_ref,
         "SYMBOL": run.symbol,
         "PARAMS": json.dumps(run.params),
     }
