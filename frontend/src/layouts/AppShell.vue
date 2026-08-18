@@ -182,7 +182,6 @@ import {
   Menu,
   Money,
   Setting,
-  TrendCharts,
 } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
@@ -218,8 +217,7 @@ const featureItems = computed<NavItem[]>(() =>
   (
     [
       { to: "/dashboard", icon: Grid, label: t("layout.nav.dashboard"), perm: "page:dashboard" },
-      { to: "/market", icon: TrendCharts, label: t("layout.nav.market"), perm: "page:market" },
-      { to: "/trading", icon: Money, label: t("layout.nav.trading"), perm: "page:trading" },
+      { to: "/trade", icon: Money, label: t("layout.nav.trade"), perm: "page:trading" },
       { to: "/strategy", icon: Cpu, label: t("layout.nav.strategy"), perm: "page:strategy" },
       { to: "/backtest", icon: DataLine, label: t("layout.nav.backtest"), perm: "page:backtest" },
     ] as NavItem[]

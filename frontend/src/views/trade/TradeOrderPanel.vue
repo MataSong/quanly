@@ -111,7 +111,6 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useTradeDeskStore } from "@/stores/tradeDesk";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import { placeOrder } from "@/api/trading";
-import { listCredentials, type Credential } from "@/api/credentials";
 import { formatApiError } from "@/utils/errors";
 
 const { t } = useI18n();
@@ -122,30 +121,8 @@ const emit = defineEmits<{
   (e: "placed"): void;
 }>();
 
-// ── Credential env lookup (to decide live/sim) ───────────────────────────────
-const credentials = ref<Credential[]>([]);
-
-async function ensureCredentials() {
-  if (credentials.value.length === 0) {
-    try {
-      credentials.value = await listCredentials();
-    } catch {
-      // silently ignore — worst case isLive stays false
-    }
-  }
-}
-
-const selectedCred = computed<Credential | undefined>(() =>
-  credentials.value.find((c) => c.id === store.credentialId),
-);
-
-const isLive = computed(() => selectedCred.value?.env === "live");
-
-// Load credentials once on mount so we can check env
-import { onMounted } from "vue";
-onMounted(() => {
-  ensureCredentials();
-});
+// ── Credential env — read from store (set by parent TradeDesk when cred selected) ──
+const isLive = computed(() => store.credentialEnv === "live");
 
 // ── Symbol suggestions ───────────────────────────────────────────────────────
 const SPOT_SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT"];
@@ -222,9 +199,6 @@ async function onPlaceOrder() {
     return;
   }
   if (!store.credentialId) return;
-
-  // Ensure we have credential info before live check
-  await ensureCredentials();
 
   // Live-env second confirmation
   if (isLive.value) {

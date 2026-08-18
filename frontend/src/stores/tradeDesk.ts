@@ -9,6 +9,7 @@ export const useTradeDeskStore = defineStore("tradeDesk", () => {
   const symbol = ref("BTC-USDT");
   const bar = ref("1m");
   const credentialId = ref<number | null>(null);
+  const credentialEnv = ref<"sim" | "live" | null>(null);
   const instType = ref<"SPOT" | "SWAP">("SPOT");
 
   function setSymbol(s: string) {
@@ -20,6 +21,9 @@ export const useTradeDeskStore = defineStore("tradeDesk", () => {
   function setCredential(id: number | null) {
     credentialId.value = id;
   }
+  function setCredentialEnv(env: "sim" | "live" | null) {
+    credentialEnv.value = env;
+  }
   function setInstType(t: "SPOT" | "SWAP") {
     instType.value = t;
   }
@@ -28,10 +32,12 @@ export const useTradeDeskStore = defineStore("tradeDesk", () => {
     symbol,
     bar,
     credentialId,
+    credentialEnv,
     instType,
     setSymbol,
     setBar,
     setCredential,
+    setCredentialEnv,
     setInstType,
   };
 });

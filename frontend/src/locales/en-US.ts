@@ -66,6 +66,7 @@ const en: typeof zh = {
       credentials: "Credentials",
       market: "Market",
       trading: "Trading",
+      trade: "Trade Desk",
       strategy: "Strategy",
       backtest: "Backtest",
     },
@@ -297,9 +298,14 @@ const en: typeof zh = {
     },
   },
   trade: {
+    title: "Trade Desk",
     latestPrice: "Last",
     wsConnected: "Live",
     wsDisconnected: "Disconnected",
+    selectSymbol: "Select symbol",
+    selectCredential: "Select credential",
+    bar: "Interval",
+    liveWarning: "⚠️ Live environment — orders use real funds. Trade carefully.",
     ohlc: {
       open: "O",
       high: "H",

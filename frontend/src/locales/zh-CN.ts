@@ -64,6 +64,7 @@ export default {
       credentials: "密钥管理",
       market: "行情",
       trading: "交易",
+      trade: "交易台",
       strategy: "策略",
       backtest: "回测",
     },
@@ -295,9 +296,14 @@ export default {
     },
   },
   trade: {
+    title: "交易台",
     latestPrice: "最新价",
     wsConnected: "实时连接",
     wsDisconnected: "未连接",
+    selectSymbol: "选择交易对",
+    selectCredential: "选择密钥",
+    bar: "周期",
+    liveWarning: "⚠️ 当前为实盘环境，下单将使用真实资金，请谨慎操作",
     ohlc: {
       open: "开",
       high: "高",

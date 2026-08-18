@@ -32,15 +32,12 @@ const routes = [
         meta: { perm: "page:credentials" },
         component: () => import("@/views/credentials/CredentialPanel.vue"),
       },
+      { path: "market", redirect: "/trade" },
+      { path: "trading", redirect: "/trade" },
       {
-        path: "market",
-        meta: { perm: "page:market" },
-        component: () => import("@/views/market/Market.vue"),
-      },
-      {
-        path: "trading",
+        path: "trade",
         meta: { perm: "page:trading" },
-        component: () => import("@/views/trading/Trading.vue"),
+        component: () => import("@/views/trade/TradeDesk.vue"),
       },
       {
         path: "strategy",
