@@ -8,26 +8,6 @@
       </el-button>
     </div>
 
-    <!-- Built-in strategies info cards -->
-    <div class="strategy-cards">
-      <div
-        v-for="s in strategies"
-        :key="s.id"
-        class="strategy-card card"
-        :class="{ selected: selectedStrategyId === s.id }"
-        @click="selectedStrategyId = s.id"
-      >
-        <div class="sc-name">{{ s.name }}</div>
-        <div class="sc-code">{{ s.code_ref }}</div>
-        <div class="sc-params">
-          <span v-for="(v, k) in s.default_params" :key="String(k)" class="sc-param">
-            {{ k }}: <strong>{{ v }}</strong>
-          </span>
-        </div>
-      </div>
-      <el-empty v-if="!strategies.length && !strategiesLoading" :description="t('common.empty')" />
-    </div>
-
     <!-- My runs table -->
     <div class="card runs-card" v-loading="runsLoading">
       <div class="card-title-row">
