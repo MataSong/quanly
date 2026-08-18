@@ -383,6 +383,7 @@ const en: typeof zh = {
     deleteStrategy: "Delete strategy",
     deleteStrategyConfirm: "Delete strategy \"{name}\"?",
     deleteHasRun: "This strategy has runs; stop and delete related runs first",
+    editResetWarning: "Editing will reset the strategy status to draft; re-submit for review if needed",
     submitAudit: "Submit for review",
     submitAuditConfirm: "Submitting will make the strategy public and pending review. Once approved, all users can use it in the marketplace. Confirm?",
     template: "Template",

@@ -173,6 +173,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   ArrowDown,
+  Collection,
   Cpu,
   DataLine,
   Expand,
@@ -182,6 +183,7 @@ import {
   Menu,
   Money,
   Setting,
+  Shop,
 } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
@@ -218,6 +220,8 @@ const featureItems = computed<NavItem[]>(() =>
     [
       { to: "/dashboard", icon: Grid, label: t("layout.nav.dashboard"), perm: "page:dashboard" },
       { to: "/trade", icon: Money, label: t("layout.nav.trade"), perm: "page:trading" },
+      { to: "/marketplace", icon: Shop, label: t("strategy.marketplace"), perm: "page:strategy" },
+      { to: "/my-strategies", icon: Collection, label: t("strategy.myStrategies"), perm: "page:strategy" },
       { to: "/strategy", icon: Cpu, label: t("layout.nav.strategy"), perm: "page:strategy" },
       { to: "/backtest", icon: DataLine, label: t("layout.nav.backtest"), perm: "page:backtest" },
     ] as NavItem[]

@@ -45,6 +45,16 @@ const routes = [
         component: () => import("@/views/strategy/Strategy.vue"),
       },
       {
+        path: "marketplace",
+        meta: { perm: "page:strategy" },
+        component: () => import("@/views/strategy/Marketplace.vue"),
+      },
+      {
+        path: "my-strategies",
+        meta: { perm: "page:strategy" },
+        component: () => import("@/views/strategy/MyStrategies.vue"),
+      },
+      {
         path: "backtest",
         meta: { perm: "page:backtest" },
         component: () => import("@/views/backtest/Backtest.vue"),

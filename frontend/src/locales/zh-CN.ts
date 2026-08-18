@@ -381,6 +381,7 @@ export default {
     deleteStrategy: "删除策略",
     deleteStrategyConfirm: "确定删除策略「{name}」？",
     deleteHasRun: "该策略有运行记录，请先停止并删除相关运行",
+    editResetWarning: "编辑后策略状态将重置为草稿，若已提交审核请重新提交",
     submitAudit: "提交审核",
     submitAuditConfirm: "提交后策略将设为公开并进入审核，通过后所有用户可在商城使用。确认提交？",
     template: "内置模板",

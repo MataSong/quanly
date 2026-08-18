@@ -229,11 +229,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import { listCredentials, type Credential } from "@/api/credentials";
 import {
-  listStrategies,
+  getMarketplace,
   listRuns,
   createRun,
   startRun,
@@ -251,11 +252,12 @@ import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue
 
 const { t } = useI18n();
 const { isMobile } = useBreakpoint();
+const route = useRoute();
 
 const dialogWidthCreate = computed(() => isMobile.value ? '92%' : '500px');
 const dialogWidthLogs = computed(() => isMobile.value ? '92%' : '760px');
 
-// ── Strategies (built-in list) ────────────────────────────────────────────────
+// ── Strategies (marketplace — public approved + builtin + own) ────────────────
 
 const strategies = ref<Strategy[]>([]);
 const strategiesLoading = ref(false);
@@ -263,7 +265,7 @@ const strategiesLoading = ref(false);
 async function loadStrategies() {
   strategiesLoading.value = true;
   try {
-    strategies.value = await listStrategies();
+    strategies.value = await getMarketplace();
   } catch (e) {
     ElMessage.error(formatApiError(e, "strategy"));
   } finally {
@@ -418,7 +420,12 @@ const selectedCred = computed<Credential | undefined>(() =>
 
 const isDualMa = computed<boolean>(() => {
   const s = strategies.value.find((s) => s.id === createForm.strategy_id);
-  return s?.code_ref === "dual_ma" || s?.name?.toLowerCase().includes("双均线") || false;
+  return (
+    s?.code_ref === "dual_ma" ||
+    s?.template_ref === "dual_ma" ||
+    s?.name?.toLowerCase().includes("双均线") ||
+    false
+  );
 });
 
 function onStrategyChange() {
@@ -614,6 +621,20 @@ const runsCols = computed<RTColumn[]>(() => [
 
 onMounted(async () => {
   await Promise.all([loadStrategies(), loadCredentials(), loadRuns(), loadSymbols()]);
+
+  // Support pre-filling from Marketplace "Use this strategy" → query.strategyId
+  const qId = route.query.strategyId;
+  if (qId) {
+    const id = Number(qId);
+    const found = strategies.value.find((s) => s.id === id);
+    if (found) {
+      createForm.strategy_id = id;
+      onStrategyChange();
+    }
+    if (credentials.value.length) createForm.credential_id = credentials.value[0].id;
+    createForm.name = "";
+    createDialogVisible.value = true;
+  }
 });
 </script>
 
