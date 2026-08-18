@@ -6,6 +6,8 @@ Two families:
 """
 import logging
 
+from django.db.models import Q
+from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers as drf_serializers
@@ -27,9 +29,55 @@ logger = logging.getLogger("quanly.strategy")
 # ---------------------------------------------------------------------------
 
 class StrategySerializer(drf_serializers.ModelSerializer):
+    """Full serializer for Strategy, including marketplace / CRUD fields.
+
+    Params visibility rules (防御性脱敏):
+      - 内置策略 (owner=None): params 正常返回 (就是 default_params)
+      - 自己的策略: params 正常返回
+      - 他人的 public+approved 策略: params 正常返回 (供参考)
+      - 他人的私有策略: params 返回 {} (防御; 理论上 detail 端点对他人私有返回 404,
+        list 端点已过滤不出现他人私有, 但保留此 guard 防止未来 query 变化时泄露)
+    """
+
+    owner_username = drf_serializers.SerializerMethodField()
+    is_owner = drf_serializers.SerializerMethodField()
+    params = drf_serializers.SerializerMethodField()
+
     class Meta:
         model = Strategy
-        fields = ["id", "name", "source_type", "code_ref", "default_params", "is_builtin", "created_at"]
+        fields = [
+            "id", "name", "source_type", "code_ref", "default_params", "is_builtin",
+            "created_at", "updated_at",
+            # marketplace fields
+            "owner_username", "template_ref", "params", "visibility", "status",
+            "description", "reject_reason", "is_owner",
+        ]
+
+    def _request(self):
+        return self.context.get("request")
+
+    def get_owner_username(self, obj) -> str:
+        return obj.owner.username if obj.owner_id else ""
+
+    def get_is_owner(self, obj) -> bool:
+        req = self._request()
+        if req is None or obj.owner_id is None:
+            return False
+        return obj.owner_id == req.user.id
+
+    def get_params(self, obj) -> dict:
+        req = self._request()
+        # 内置策略: return params (内置用 default_params, 用户实例用 params)
+        if obj.owner_id is None:
+            return obj.params if obj.params else obj.default_params
+        # 自己的策略: 正常返回
+        if req is not None and obj.owner_id == req.user.id:
+            return obj.params
+        # 他人策略: 只有 public+approved 才暴露 params
+        if obj.visibility == Strategy.VISIBILITY_PUBLIC and obj.status == Strategy.STATUS_APPROVED:
+            return obj.params
+        # 他人私有/pending/rejected: 脱敏
+        return {}
 
 
 class StrategyRunReadSerializer(drf_serializers.ModelSerializer):
@@ -59,19 +107,247 @@ class StrategyLogSerializer(drf_serializers.ModelSerializer):
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _marketplace_qs(user):
+    """Return strategies visible to user: public+approved | own | builtin."""
+    return Strategy.objects.filter(
+        Q(status=Strategy.STATUS_APPROVED, visibility=Strategy.VISIBILITY_PUBLIC)
+        | Q(owner=user)
+        | Q(owner__isnull=True)
+    ).distinct()
+
+
+def _serialize(strategy, request):
+    return StrategySerializer(strategy, context={"request": request}).data
+
+
+def _serialize_many(qs, request):
+    return StrategySerializer(qs, many=True, context={"request": request}).data
+
+
+# ---------------------------------------------------------------------------
 # Management API — JWT authenticated
 # ---------------------------------------------------------------------------
 
 class StrategyListView(APIView):
-    """GET /api/strategy/strategies — list available strategies."""
+    """GET /api/strategy/strategies — list available strategies (marketplace view)."""
 
     permission_classes = [IsAuthenticated, HasRequiredPermissions]
     required_permissions = ["strategy:view"]
 
     def get(self, request):
-        strategies = Strategy.objects.all()
-        return Response(StrategySerializer(strategies, many=True).data)
+        strategies = _marketplace_qs(request.user)
+        return Response(_serialize_many(strategies, request))
 
+
+# ---------------------------------------------------------------------------
+# Marketplace & My Strategies
+# ---------------------------------------------------------------------------
+
+class MarketplaceListView(APIView):
+    """GET /api/strategy/marketplace — public+approved strategies + own + builtin."""
+
+    permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    required_permissions = ["strategy:view"]
+
+    def get(self, request):
+        qs = _marketplace_qs(request.user)
+        return Response(_serialize_many(qs, request))
+
+
+class MyStrategiesListView(APIView):
+    """GET /api/strategy/mine — strategies owned by the current user."""
+
+    permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    required_permissions = ["strategy:view"]
+
+    def get(self, request):
+        qs = Strategy.objects.filter(owner=request.user)
+        return Response(_serialize_many(qs, request))
+
+
+# ---------------------------------------------------------------------------
+# Strategy CRUD
+# ---------------------------------------------------------------------------
+
+class StrategyCreateView(APIView):
+    """POST /api/strategy/strategies — create a user parameterized strategy instance."""
+
+    permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    required_permissions = ["strategy:create"]
+
+    def post(self, request):
+        name = (request.data.get("name") or "").strip()
+        template_ref = (request.data.get("template_ref") or "").strip()
+        params = request.data.get("params") or {}
+        description = (request.data.get("description") or "").strip()
+        visibility = request.data.get("visibility", Strategy.VISIBILITY_PRIVATE)
+
+        if not name:
+            return Response({"detail": "name is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not template_ref:
+            return Response({"detail": "template_ref is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate template_ref: must exist as a builtin strategy (owner=None)
+        if not Strategy.objects.filter(owner__isnull=True, code_ref=template_ref).exists():
+            return Response(
+                {"detail": f"Invalid template_ref '{template_ref}': no builtin strategy found."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if visibility not in (Strategy.VISIBILITY_PRIVATE, Strategy.VISIBILITY_PUBLIC):
+            visibility = Strategy.VISIBILITY_PRIVATE
+
+        strategy = Strategy.objects.create(
+            owner=request.user,
+            name=name,
+            source_type=Strategy.SOURCE_UPLOADED,
+            is_builtin=False,
+            code_ref=template_ref,          # tasks.py picks up template via code_ref/template_ref
+            template_ref=template_ref,
+            params=params,
+            default_params={},
+            description=description,
+            visibility=visibility,
+            status=Strategy.STATUS_DRAFT,
+        )
+        return Response(_serialize(strategy, request), status=status.HTTP_201_CREATED)
+
+
+class StrategyDetailView(APIView):
+    """GET  /api/strategy/strategies/<pk> — detail; 404 for other-user private.
+    PUT  /api/strategy/strategies/<pk> — update own strategy.
+    DELETE /api/strategy/strategies/<pk> — delete own strategy.
+    """
+
+    permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    required_permissions = {
+        "GET": ["strategy:view"],
+        "PUT": ["strategy:update"],
+        "DELETE": ["strategy:delete"],
+    }
+
+    def _get_for_read(self, pk, user):
+        """Return strategy or raise 404 with access control."""
+        strategy = get_object_or_404(Strategy, pk=pk)
+        # 内置策略: always readable
+        if strategy.owner_id is None:
+            return strategy
+        # Own strategy: always readable
+        if strategy.owner_id == user.id:
+            return strategy
+        # Other-user public+approved: readable
+        if strategy.visibility == Strategy.VISIBILITY_PUBLIC and strategy.status == Strategy.STATUS_APPROVED:
+            return strategy
+        # All other cases (other user's private / pending / rejected): 404
+        from django.http import Http404
+        raise Http404
+
+    def get(self, request, pk):
+        strategy = self._get_for_read(pk, request.user)
+        data = _serialize(strategy, request)
+        data["performance"] = {}  # reserved for M-T4
+        return Response(data)
+
+    def put(self, request, pk):
+        strategy = get_object_or_404(Strategy, pk=pk, owner=request.user)
+
+        name = (request.data.get("name") or "").strip() or strategy.name
+        params = request.data.get("params", strategy.params)
+        description = request.data.get("description", strategy.description)
+        visibility = request.data.get("visibility", strategy.visibility)
+
+        if visibility not in (Strategy.VISIBILITY_PRIVATE, Strategy.VISIBILITY_PUBLIC):
+            visibility = strategy.visibility
+
+        # Reset status to draft if strategy was not already draft
+        new_status = strategy.status
+        if strategy.status in (Strategy.STATUS_APPROVED, Strategy.STATUS_PENDING, Strategy.STATUS_REJECTED):
+            new_status = Strategy.STATUS_DRAFT
+
+        strategy.name = name
+        strategy.params = params
+        strategy.description = description
+        strategy.visibility = visibility
+        strategy.status = new_status
+        strategy.save(update_fields=["name", "params", "description", "visibility", "status", "updated_at"])
+
+        return Response(_serialize(strategy, request))
+
+    def delete(self, request, pk):
+        strategy = get_object_or_404(Strategy, pk=pk, owner=request.user)
+        try:
+            strategy.delete()
+        except ProtectedError:
+            return Response(
+                {"detail": "该策略有运行记录，请先停止并删除相关运行。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class StrategySubmitView(APIView):
+    """POST /api/strategy/strategies/<pk>/submit — submit own strategy for review."""
+
+    permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    required_permissions = ["strategy:update"]
+
+    def post(self, request, pk):
+        strategy = get_object_or_404(Strategy, pk=pk, owner=request.user)
+        strategy.visibility = Strategy.VISIBILITY_PUBLIC
+        strategy.status = Strategy.STATUS_PENDING
+        strategy.save(update_fields=["visibility", "status", "updated_at"])
+        return Response(_serialize(strategy, request))
+
+
+# ---------------------------------------------------------------------------
+# Admin review endpoints
+# ---------------------------------------------------------------------------
+
+class AdminPendingView(APIView):
+    """GET /api/strategy/admin/pending — list strategies pending review."""
+
+    permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    required_permissions = ["strategy:audit"]
+
+    def get(self, request):
+        qs = Strategy.objects.filter(status=Strategy.STATUS_PENDING)
+        return Response(_serialize_many(qs, request))
+
+
+class AdminReviewView(APIView):
+    """POST /api/strategy/admin/strategies/<pk>/review — approve or reject a strategy."""
+
+    permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    required_permissions = ["strategy:audit"]
+
+    def post(self, request, pk):
+        strategy = get_object_or_404(Strategy, pk=pk)
+        action = (request.data.get("action") or "").strip()
+        reason = (request.data.get("reason") or "").strip()
+
+        if action == "approve":
+            strategy.status = Strategy.STATUS_APPROVED
+            strategy.reject_reason = ""
+            strategy.save(update_fields=["status", "reject_reason", "updated_at"])
+        elif action == "reject":
+            strategy.status = Strategy.STATUS_REJECTED
+            strategy.reject_reason = reason
+            strategy.save(update_fields=["status", "reject_reason", "updated_at"])
+        else:
+            return Response(
+                {"detail": "action must be 'approve' or 'reject'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(_serialize(strategy, request))
+
+
+# ---------------------------------------------------------------------------
+# Strategy Runs
+# ---------------------------------------------------------------------------
 
 class StrategyRunListCreateView(APIView):
     """
@@ -106,6 +382,21 @@ class StrategyRunListCreateView(APIView):
 
         strategy = get_object_or_404(Strategy, pk=strategy_id)
 
+        # ── Run authorization guard (security core) ──────────────────────────
+        # Allow if: builtin strategy (owner=None), OR own strategy, OR
+        # public+approved strategy. Deny everything else with 403.
+        is_builtin = strategy.owner_id is None
+        is_own = strategy.owner_id == request.user.id
+        is_public_approved = (
+            strategy.visibility == Strategy.VISIBILITY_PUBLIC
+            and strategy.status == Strategy.STATUS_APPROVED
+        )
+        if not (is_builtin or is_own or is_public_approved):
+            return Response(
+                {"detail": "您无权使用该策略。"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         # Multi-tenant: credential must belong to request.user
         from core.credentials.models import Credential
 
@@ -121,6 +412,10 @@ class StrategyRunListCreateView(APIView):
         if not name:
             name = f"{strategy.name}-{symbol}-{timezone.now().strftime('%m%d-%H%M')}"
 
+        # Use strategy's stored params for user-parameterized strategies;
+        # fall back to request params (or empty dict) for builtin strategies.
+        run_params = strategy.params if strategy.params else params
+
         # 创建时不生成 token —— token 由 start(run_strategy task)时才生成并注入容器,
         # 避免 pending run 持有一个永不生效的 token(会混淆)。
         run = StrategyRun.objects.create(
@@ -129,7 +424,7 @@ class StrategyRunListCreateView(APIView):
             credential=credential,
             env=env,
             symbol=symbol,
-            params=params,
+            params=run_params,
             name=name,
             run_token_hash="",
             status=StrategyRun.STATUS_PENDING,

@@ -48,6 +48,7 @@ PERMISSION_GROUPS: dict[str, dict] = {
             "strategy:update": {"zh": "更新策略", "en": "Update Strategy"},
             "strategy:delete": {"zh": "删除策略", "en": "Delete Strategy"},
             "strategy:run": {"zh": "启停策略运行", "en": "Start/Stop Strategy Run"},
+            "strategy:audit": {"zh": "审核策略", "en": "Audit Strategies"},
         },
     },
     "backtest": {
