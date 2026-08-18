@@ -418,6 +418,10 @@ class StrategyRunListCreateView(APIView):
 
         # 创建时不生成 token —— token 由 start(run_strategy task)时才生成并注入容器,
         # 避免 pending run 持有一个永不生效的 token(会混淆)。
+        # run_token_hash 有 unique 约束,pending 期用唯一占位(非真 token hash,
+        # 加 "pending:" 前缀避免与 sha256 hash 碰撞),防止多个 pending run 空串冲突。
+        import uuid
+
         run = StrategyRun.objects.create(
             user=request.user,
             strategy=strategy,
@@ -426,7 +430,7 @@ class StrategyRunListCreateView(APIView):
             symbol=symbol,
             params=run_params,
             name=name,
-            run_token_hash="",
+            run_token_hash=f"pending:{uuid.uuid4().hex}",
             status=StrategyRun.STATUS_PENDING,
         )
 
