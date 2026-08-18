@@ -613,3 +613,28 @@ def test_serializer_params_masked_for_other_pending(api_client):
     data = StrategySerializer(pending_strat, context={"request": drf_request}).data
     # Other user's pending strategy: not public+approved → params masked
     assert data["params"] == {}
+
+
+@pytest.mark.django_db
+def test_detail_performance_aggregation(api_client):
+    """策略详情 performance 聚合:run_count/user_count/order_count 真实统计,无数据返 0。"""
+    owner = _make_user("perf_owner", ["strategy:view"])
+    strat = _make_user_strategy(owner, visibility="public", status=Strategy.STATUS_APPROVED)
+    # 无运行时全 0
+    api_client.force_authenticate(owner)
+    resp = api_client.get(f"/api/strategy/strategies/{strat.id}")
+    assert resp.status_code == 200
+    perf = resp.data["performance"]
+    assert perf["run_count"] == 0
+    assert perf["user_count"] == 0
+    assert perf["order_count"] == 0
+    assert perf["reference_backtest"] is None
+
+    # 造 2 个 run(不同用户) → run_count=2, user_count=2
+    other = _make_user("perf_other")
+    _make_run(owner, strat)
+    _make_run(other, strat)
+    resp = api_client.get(f"/api/strategy/strategies/{strat.id}")
+    perf = resp.data["performance"]
+    assert perf["run_count"] == 2
+    assert perf["user_count"] == 2

@@ -216,6 +216,47 @@ class StrategyCreateView(APIView):
         return Response(_serialize(strategy, request), status=status.HTTP_201_CREATED)
 
 
+def _strategy_performance(strategy) -> dict:
+    """策略业绩聚合(零 mock:只用真实运行/成交/回测数据,不编造收益率)。
+
+    - run_count:  该策略的运行次数
+    - user_count: 使用过该策略的去重用户数
+    - order_count: 该策略各运行下的成交订单数
+    - reference_backtest: 最近一次该模板的真实回测 metrics(参考业绩,可为 None)
+    """
+    from django.db.models import Count
+
+    from core.strategy.models import StrategyOrder, StrategyRun
+
+    runs = StrategyRun.objects.filter(strategy=strategy)
+    run_count = runs.count()
+    user_count = runs.values("user").distinct().count()
+    order_count = StrategyOrder.objects.filter(run__strategy=strategy).count()
+
+    reference_backtest = None
+    try:
+        from core.backtest.models import Backtest
+
+        # 用户参数化实例跑的是 template_ref 模板;内置用自身 code_ref。
+        template = strategy.template_ref or strategy.code_ref
+        bt = (
+            Backtest.objects.filter(strategy__code_ref=template, status="done")
+            .order_by("-created_at")
+            .first()
+        )
+        if bt and bt.metrics:
+            reference_backtest = bt.metrics
+    except Exception:
+        reference_backtest = None
+
+    return {
+        "run_count": run_count,
+        "user_count": user_count,
+        "order_count": order_count,
+        "reference_backtest": reference_backtest,
+    }
+
+
 class StrategyDetailView(APIView):
     """GET  /api/strategy/strategies/<pk> — detail; 404 for other-user private.
     PUT  /api/strategy/strategies/<pk> — update own strategy.
@@ -248,7 +289,7 @@ class StrategyDetailView(APIView):
     def get(self, request, pk):
         strategy = self._get_for_read(pk, request.user)
         data = _serialize(strategy, request)
-        data["performance"] = {}  # reserved for M-T4
+        data["performance"] = _strategy_performance(strategy)
         return Response(data)
 
     def put(self, request, pk):
