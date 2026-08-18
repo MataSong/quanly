@@ -296,6 +296,18 @@ const en: typeof zh = {
       utc: "UTC",
     },
   },
+  trade: {
+    latestPrice: "Last",
+    wsConnected: "Live",
+    wsDisconnected: "Disconnected",
+    ohlc: {
+      open: "O",
+      high: "H",
+      low: "L",
+      close: "C",
+      time: "Time",
+    },
+  },
   trading: {
     title: "Trading",
     credential: "Credential",

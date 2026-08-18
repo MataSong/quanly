@@ -294,6 +294,18 @@ export default {
       utc: "UTC",
     },
   },
+  trade: {
+    latestPrice: "最新价",
+    wsConnected: "实时连接",
+    wsDisconnected: "未连接",
+    ohlc: {
+      open: "开",
+      high: "高",
+      low: "低",
+      close: "收",
+      time: "时间",
+    },
+  },
   trading: {
     title: "交易",
     credential: "密钥",
