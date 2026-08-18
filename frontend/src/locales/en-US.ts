@@ -397,6 +397,7 @@ const en: typeof zh = {
     rejectReason: "Reject reason",
     rejectReasonPlaceholder: "Enter reject reason",
     reviewOwner: "Owner",
+    paramsCol: "Params",
     runCount: "Runs",
     userCount: "Users",
     orderCount: "Orders",

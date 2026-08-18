@@ -383,12 +383,12 @@ async function onDelete(row: Strategy) {
     ElMessage.success(t("common.success"));
     await load();
   } catch (e: unknown) {
-    // 400 = has runs
-    const msg = formatApiError(e, "strategy");
-    if (msg.includes("400") || String(e).includes("400")) {
+    // 400 = 该策略有运行记录,不能删(后端 ProtectedError)
+    const status = (e as { response?: { status?: number } })?.response?.status;
+    if (status === 400) {
       ElMessage.error(t("strategy.deleteHasRun"));
     } else {
-      ElMessage.error(msg);
+      ElMessage.error(formatApiError(e, "strategy"));
     }
   }
 }

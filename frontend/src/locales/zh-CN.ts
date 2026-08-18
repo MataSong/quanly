@@ -395,6 +395,7 @@ export default {
     rejectReason: "驳回理由",
     rejectReasonPlaceholder: "请输入驳回原因",
     reviewOwner: "创建者",
+    paramsCol: "参数",
     runCount: "运行次数",
     userCount: "使用人数",
     orderCount: "成交笔数",

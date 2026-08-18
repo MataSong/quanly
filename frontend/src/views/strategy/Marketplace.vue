@@ -79,7 +79,7 @@
       :size="isMobile ? '92%' : '480px'"
       direction="rtl"
     >
-      <div v-if="detailLoading" class="detail-loading">
+      <div v-if="detailLoading && !detailStrategy" class="detail-loading">
         <el-skeleton :rows="6" animated />
       </div>
       <template v-else-if="detailStrategy">

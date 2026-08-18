@@ -176,7 +176,7 @@ const auditCols = computed<RTColumn[]>(() => [
   { prop: "name", label: t("strategy.strategyName"), minWidth: 140 },
   { prop: "owner_username", label: t("strategy.reviewOwner"), width: 120 },
   { prop: "template_ref", label: t("strategy.template"), width: 120 },
-  { prop: "params", label: "Params", minWidth: 160 },
+  { prop: "params", label: t("strategy.paramsCol"), minWidth: 160 },
   { prop: "description", label: t("common.description"), minWidth: 160 },
   { prop: "audit_actions", label: t("common.actions"), width: 160, align: "center", fixed: "right" },
 ]);
