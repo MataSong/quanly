@@ -19,14 +19,20 @@ Redis DB layout:
     DB0 — Channels channel-layer
     DB1 — Celery broker/backend
     DB2 — market active-subscription registry (this module + consumers.py)
+
+Self-healing (I2 / C1/C2):
+    - redis_client is rebuilt each sync iteration if it is None (I2).
+    - The collector reads market:active, then for each member checks whether
+      its market:refcount:<member> key still exists.  Members whose refcount key
+      has expired (TTL elapsed or disconnect never ran) are skipped and removed
+      from market:active on the spot, so stale subscriptions drain within one
+      sync cycle after the TTL expires (C1/C2).
 """
 import asyncio
 import json
 import logging
 import os
-import time
 
-from asgiref.sync import async_to_sync
 from django.core.management.base import BaseCommand
 from core.market.consumers import _sanitize_symbol
 
@@ -107,18 +113,22 @@ def _parse_candle_row(row: list) -> dict | None:
     """Parse a single OKX candle data row into a candle dict.
 
     Row format: [ts, open, high, low, close, vol, ...]
-    Returns None if the row is too short.
+    Returns None if the row is too short or ts cannot be converted to int.
     """
     if len(row) < 6:
         return None
-    return {
-        "ts": int(row[0]),
-        "o": row[1],
-        "h": row[2],
-        "l": row[3],
-        "c": row[4],
-        "vol": row[5],
-    }
+    try:
+        return {
+            "ts": int(row[0]),
+            "o": row[1],
+            "h": row[2],
+            "l": row[3],
+            "c": row[4],
+            "vol": row[5],
+        }
+    except (ValueError, TypeError) as exc:
+        logger.warning("_parse_candle_row: bad row %r — %s", row, exc)
+        return None
 
 
 def _parse_ticker_data(data: list) -> dict | None:
@@ -181,10 +191,10 @@ async def _run(extra_members: set[str]) -> None:
 
                         if channel.startswith("candle") and data_rows:
                             for row in data_rows:
-                                candle = _parse_candle_row(row)
-                                if candle is None:
-                                    continue
                                 try:
+                                    candle = _parse_candle_row(row)
+                                    if candle is None:
+                                        continue
                                     await channel_layer.group_send(
                                         group_name,
                                         {
@@ -199,9 +209,9 @@ async def _run(extra_members: set[str]) -> None:
                                     )
 
                         elif channel == "tickers":
-                            ticker = _parse_ticker_data(data_rows)
-                            if ticker is not None:
-                                try:
+                            try:
+                                ticker = _parse_ticker_data(data_rows)
+                                if ticker is not None:
                                     await channel_layer.group_send(
                                         group_name,
                                         {
@@ -210,41 +220,59 @@ async def _run(extra_members: set[str]) -> None:
                                             "ticker": ticker,
                                         },
                                     )
-                                except Exception as exc:
-                                    logger.warning(
-                                        "channel_layer.group_send (ticker) error: %s", exc
-                                    )
+                            except Exception as exc:
+                                logger.warning(
+                                    "channel_layer.group_send (ticker) error: %s", exc
+                                )
 
                 # ── sub-coroutine 2: subscription sync loop ────────────────
 
                 async def _sync_loop():
                     nonlocal subscribed
                     redis_client = None
-                    try:
-                        redis_client = aioredis.from_url(_REDIS_URL)
-                    except Exception as exc:
-                        logger.warning(
-                            "Could not create Redis client for sync loop: %s", exc
-                        )
 
                     while True:
                         await asyncio.sleep(_SYNC_INTERVAL)
                         try:
-                            # Read active members from Redis DB2
+                            # I2: rebuild Redis client if unavailable
+                            if redis_client is None:
+                                try:
+                                    redis_client = aioredis.from_url(_REDIS_URL)
+                                except Exception as exc:
+                                    logger.warning(
+                                        "Redis client creation failed: %s", exc
+                                    )
+
+                            # Read active members from Redis DB2, filtering out
+                            # any whose refcount key has expired (C1/C2 self-heal)
                             active: set[str] = set()
                             if redis_client is not None:
                                 try:
                                     raw_members = await redis_client.smembers(
                                         "market:active"
                                     )
-                                    active = {
-                                        m.decode() if isinstance(m, bytes) else m
-                                        for m in raw_members
-                                    }
+                                    stale: list[str] = []
+                                    for m in raw_members:
+                                        member = m.decode() if isinstance(m, bytes) else m
+                                        # Check refcount key still exists
+                                        exists = await redis_client.exists(
+                                            f"market:refcount:{member}"
+                                        )
+                                        if exists:
+                                            active.add(member)
+                                        else:
+                                            stale.append(member)
+                                    if stale:
+                                        # Clean up ghost entries left by crashed consumers
+                                        await redis_client.srem("market:active", *stale)
+                                        logger.info(
+                                            "Removed stale active members: %s", stale
+                                        )
                                 except Exception as exc:
                                     logger.warning(
-                                        "Redis smembers error (using fallback): %s", exc
+                                        "Redis read error (using fallback): %s", exc
                                     )
+                                    redis_client = None  # force reconnect next iteration
 
                             target = _compute_target_subs(active, extra_members)
 

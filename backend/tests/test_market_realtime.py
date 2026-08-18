@@ -318,14 +318,15 @@ async def test_consumer_market_update_both_candle_and_ticker():
 
 @pytest.mark.asyncio
 async def test_consumer_redis_register_builds_correct_member():
-    """_redis_register calls INCR and SADD with the correct member key."""
-    from core.market.consumers import MarketConsumer
+    """_redis_register calls INCR, EXPIRE, and SADD with the correct member key."""
+    from core.market.consumers import MarketConsumer, REFCOUNT_TTL
 
     consumer = MarketConsumer()
     consumer._active_member = "BTC-USDT:1m"
 
     mock_r = AsyncMock()
     mock_r.incr = AsyncMock(return_value=1)
+    mock_r.expire = AsyncMock(return_value=1)
     mock_r.sadd = AsyncMock(return_value=1)
     mock_r.__aenter__ = AsyncMock(return_value=mock_r)
     mock_r.__aexit__ = AsyncMock(return_value=False)
@@ -335,6 +336,7 @@ async def test_consumer_redis_register_builds_correct_member():
         await consumer._redis_register()
 
     mock_r.incr.assert_called_once_with("market:refcount:BTC-USDT:1m")
+    mock_r.expire.assert_called_once_with("market:refcount:BTC-USDT:1m", REFCOUNT_TTL)
     mock_r.sadd.assert_called_once_with("market:active", "BTC-USDT:1m")
 
 
@@ -399,3 +401,93 @@ async def test_consumer_redis_error_is_non_fatal():
         # Should not raise
         await consumer._redis_register()
         await consumer._redis_deregister()
+
+
+# ============================================================
+# New tests for C1/C2 self-heal, I2 reconnect, M1 parse fault tolerance
+# ============================================================
+
+class TestParseCandleRowFaultTolerance:
+    """M1: bad ts values return None instead of raising."""
+
+    def test_non_integer_ts_returns_none(self):
+        row = ["not-a-number", "35000.0", "35100.0", "34900.0", "35050.0", "10.5"]
+        result = _parse_candle_row(row)
+        assert result is None
+
+    def test_none_ts_returns_none(self):
+        row = [None, "35000.0", "35100.0", "34900.0", "35050.0", "10.5"]
+        result = _parse_candle_row(row)
+        assert result is None
+
+    def test_valid_row_still_works_after_bad_ones(self):
+        """Ensure the function remains usable after receiving bad rows."""
+        bad = ["oops", "1", "2", "3", "4", "5"]
+        good = ["1700000000000", "35000", "35100", "34900", "35050", "10"]
+        assert _parse_candle_row(bad) is None
+        result = _parse_candle_row(good)
+        assert result is not None
+        assert result["ts"] == 1700000000000
+
+
+class TestStaleMemberCleanup:
+    """C1/C2: _compute_target_subs correctly excludes stale members.
+
+    The actual Redis EXISTS check and SREM cleanup happens inside _sync_loop
+    (an async closure, hard to unit-test directly).  We test the pure-function
+    side: if stale members are filtered *before* calling _compute_target_subs,
+    the result contains only live members.
+    """
+
+    def test_stale_member_excluded_from_target(self):
+        """After filtering out a stale member, it does not appear in target subs."""
+        raw_active = {"BTC-USDT:1m", "ETH-USDT:5m"}
+        # Simulate: ETH-USDT:5m has no refcount key (stale) → excluded
+        live_active = {"BTC-USDT:1m"}
+        target = _compute_target_subs(live_active)
+        assert ("candle1m", "BTC-USDT") in target
+        assert ("tickers", "BTC-USDT") in target
+        # ETH entries must not appear
+        assert ("candle5m", "ETH-USDT") not in target
+        assert ("tickers", "ETH-USDT") not in target
+
+    def test_all_stale_falls_back_to_default(self):
+        """If all active members are stale and filtered, fallback kicks in."""
+        live_active: set[str] = set()  # everything was stale
+        target = _compute_target_subs(live_active)
+        # Fallback BTC-USDT:1m should appear
+        assert ("candle1m", "BTC-USDT") in target
+        assert ("tickers", "BTC-USDT") in target
+
+
+@pytest.mark.asyncio
+async def test_consumer_heartbeat_refreshes_ttl():
+    """_heartbeat calls EXPIRE on the refcount key periodically."""
+    import asyncio
+    from core.market.consumers import MarketConsumer, REFCOUNT_TTL
+
+    consumer = MarketConsumer()
+    consumer._active_member = "BTC-USDT:1m"
+
+    expire_calls: list = []
+
+    mock_r = AsyncMock()
+    mock_r.expire = AsyncMock(side_effect=lambda key, ttl: expire_calls.append((key, ttl)))
+    mock_r.__aenter__ = AsyncMock(return_value=mock_r)
+    mock_r.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("core.market.consumers.aioredis") as mock_aioredis, \
+         patch("core.market.consumers.HEARTBEAT_INTERVAL", 0):
+        mock_aioredis.from_url.return_value = mock_r
+        # Run heartbeat briefly then cancel it
+        task = asyncio.ensure_future(consumer._heartbeat())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    # At least one EXPIRE call should have been made
+    assert len(expire_calls) >= 1
+    assert expire_calls[0] == ("market:refcount:BTC-USDT:1m", REFCOUNT_TTL)

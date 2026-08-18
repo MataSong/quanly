@@ -10,10 +10,19 @@ Group naming: market_<symbol>  (e.g. market_BTC-USDT)
 The run_market_collector management command broadcasts to these groups.
 
 Redis DB2 active subscription registry:
-  - key  market:refcount:<symbol>:<bar>  (integer, INCR on connect, DECR on disconnect)
+  - key  market:refcount:<symbol>:<bar>  (integer with TTL, INCR on connect, DECR on disconnect)
   - key  market:active                   (SADD/SREM member "<symbol>:<bar>")
   Redis errors are non-fatal: connection still proceeds, just without registering.
+
+Self-healing (C1/C2):
+  - refcount key carries a TTL of REFCOUNT_TTL seconds (300s).
+  - A background asyncio task (_heartbeat) runs while the WS is open and refreshes
+    the TTL every HEARTBEAT_INTERVAL seconds (60s).
+  - If disconnect() is never called (crash/network drop), the TTL expires and the
+    collector's sync loop will detect the missing refcount key and clean up market:active.
+  - On clean disconnect the TTL path is superseded by the normal DECR/SREM path.
 """
+import asyncio
 import json
 import logging
 import os
@@ -28,6 +37,9 @@ logger = logging.getLogger("quanly.market")
 _REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 _REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
 _REDIS_URL = f"redis://{_REDIS_HOST}:{_REDIS_PORT}/2"
+
+REFCOUNT_TTL = 300       # seconds — max lifetime of a stale refcount key
+HEARTBEAT_INTERVAL = 60  # seconds — how often the consumer refreshes the TTL
 
 
 def _sanitize_symbol(symbol: str) -> str:
@@ -60,6 +72,7 @@ class MarketConsumer(AsyncWebsocketConsumer):
         self.bar = params.get("bar", ["1m"])[0]
         self.group_name = f"market_{self.symbol}"
         self._active_member = f"{self.symbol}:{self.bar}"
+        self._heartbeat_task: asyncio.Task | None = None
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
@@ -71,7 +84,19 @@ class MarketConsumer(AsyncWebsocketConsumer):
         # --- Register active subscription in Redis DB2 ---
         await self._redis_register()
 
+        # --- Start TTL heartbeat to keep refcount key alive ---
+        self._heartbeat_task = asyncio.ensure_future(self._heartbeat())
+
     async def disconnect(self, close_code):
+        # Stop heartbeat first
+        task = getattr(self, "_heartbeat_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
         group = getattr(self, "group_name", None)
         if group:
             await self.channel_layer.group_discard(group, self.channel_name)
@@ -105,13 +130,14 @@ class MarketConsumer(AsyncWebsocketConsumer):
     # ------------------------------------------------------------------ helpers
 
     async def _redis_register(self):
-        """Increment refcount and add to active set. Non-fatal on Redis error."""
+        """Increment refcount (with TTL) and add to active set. Non-fatal on Redis error."""
         member = getattr(self, "_active_member", None)
         if not member:
             return
         try:
             async with aioredis.from_url(_REDIS_URL) as r:
                 await r.incr(f"market:refcount:{member}")
+                await r.expire(f"market:refcount:{member}", REFCOUNT_TTL)
                 await r.sadd("market:active", member)
         except Exception as exc:
             logger.warning("MarketConsumer: Redis register failed (degraded): %s", exc)
@@ -129,6 +155,25 @@ class MarketConsumer(AsyncWebsocketConsumer):
                     await r.delete(f"market:refcount:{member}")
         except Exception as exc:
             logger.warning("MarketConsumer: Redis deregister failed (degraded): %s", exc)
+
+    async def _heartbeat(self):
+        """Periodically refresh the refcount key TTL while this connection is alive."""
+        member = getattr(self, "_active_member", None)
+        if not member:
+            return
+        refcount_key = f"market:refcount:{member}"
+        try:
+            while True:
+                await asyncio.sleep(HEARTBEAT_INTERVAL)
+                try:
+                    async with aioredis.from_url(_REDIS_URL) as r:
+                        await r.expire(refcount_key, REFCOUNT_TTL)
+                except Exception as exc:
+                    logger.warning(
+                        "MarketConsumer: Redis heartbeat failed (degraded): %s", exc
+                    )
+        except asyncio.CancelledError:
+            pass
 
     @staticmethod
     async def _authenticate(token: str):
