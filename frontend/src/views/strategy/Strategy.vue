@@ -259,15 +259,11 @@ const dialogWidthLogs = computed(() => isMobile.value ? '92%' : '760px');
 
 const strategies = ref<Strategy[]>([]);
 const strategiesLoading = ref(false);
-const selectedStrategyId = ref<number | null>(null);
 
 async function loadStrategies() {
   strategiesLoading.value = true;
   try {
     strategies.value = await listStrategies();
-    if (strategies.value.length && selectedStrategyId.value === null) {
-      selectedStrategyId.value = strategies.value[0].id;
-    }
   } catch (e) {
     ElMessage.error(formatApiError(e, "strategy"));
   } finally {
@@ -642,46 +638,6 @@ onMounted(async () => {
 }
 
 /* Strategy cards */
-.strategy-cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.strategy-card {
-  cursor: pointer;
-  min-width: 220px;
-  padding: var(--space-4);
-  border: 2px solid var(--gray-200);
-  border-radius: var(--radius-lg);
-  background: #fff;
-  transition: border-color var(--duration-fast) var(--ease),
-              box-shadow var(--duration-fast) var(--ease);
-}
-
-.strategy-card:hover {
-  border-color: var(--brand-primary);
-}
-
-.strategy-card.selected {
-  border-color: var(--brand-primary);
-  box-shadow: 0 0 0 3px rgba(99, 91, 255, 0.1);
-}
-
-.sc-name {
-  font-weight: 600;
-  font-size: var(--font-size-md);
-  color: var(--gray-800);
-  margin-bottom: 4px;
-}
-
-.sc-code {
-  font-size: var(--font-size-xs);
-  color: var(--gray-500);
-  font-family: monospace;
-  margin-bottom: var(--space-2);
-}
-
 .sc-params {
   display: flex;
   flex-wrap: wrap;
