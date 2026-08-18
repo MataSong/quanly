@@ -247,7 +247,7 @@ git commit -m "feat(trade): TradeOrderPanel 下单 + TradeMonitor 持仓委托�
 - 布局:PC `grid 1fr 360px`(左 TradeChart、右 TradeOrderPanel)+ 下方全宽 TradeMonitor;手机纵向 chart→order→monitor(@include mobile)。
 
 - [ ] **Step 1: TradeDesk 父页** — 共享选择栏 + 布局 grid + 挂三子组件。
-- [ ] **Step 2: 路由** — 新增 `/trade`(meta.perm 组合校验 page:market+page:trading,或用现有守卫支持多 perm;若守卫只支持单 perm 则用 page:trading 主 + 组件内校验 market);`/market`、`/trading` redirect 到 `/trade`。
+- [ ] **Step 2: 路由** — 新增 `/trade`,`meta.perm = "page:trading"`(**已定:现有守卫 guards.ts 只支持单 perm 字符串**,交易台以交易为主用 page:trading 作路由权限;行情 K线在 TradeChart 内按 `auth.hasPerm("market:view")` 优雅降级——无权限则图表区显示"无行情权限"提示,不影响下单);`/market`、`/trading` redirect 到 `/trade`。
 - [ ] **Step 3: 菜单 i18n** — AppShell featureItems 去 market/trading 加 trade;locales 加 `layout.nav.trade` + `trade.*`(标题/选择器/ohlc/latestPrice 等)zh/en 对齐。
 - [ ] **Step 4: build 过 + Commit**
 
