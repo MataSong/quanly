@@ -7,6 +7,7 @@
       </el-button>
     </div>
 
+    <div class="table-scroll">
     <el-table :data="users" size="small" border v-loading="tableLoading">
       <el-table-column prop="username" :label="t('admin.users.columns.username')" width="160" />
       <el-table-column prop="email" :label="t('admin.users.columns.email')" />
@@ -56,10 +57,11 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <!-- 新建用户 -->
-    <el-dialog v-model="createVisible" :title="t('admin.users.create')" width="440px">
-      <el-form label-width="100px">
+    <el-dialog v-model="createVisible" :title="t('admin.users.create')" :width="dialogWidthSm">
+      <el-form label-width="100px" :label-position="isMobile ? 'top' : 'right'">
         <el-form-item :label="t('admin.users.username')">
           <el-input v-model="createForm.username" />
         </el-form-item>
@@ -104,7 +106,7 @@
     </el-dialog>
 
     <!-- 编辑角色 -->
-    <el-dialog v-model="rolesVisible" :title="t('admin.users.editRoles')" width="440px">
+    <el-dialog v-model="rolesVisible" :title="t('admin.users.editRoles')" :width="dialogWidthSm">
       <el-checkbox-group v-model="selectedRoleIds">
         <el-checkbox v-for="r in allRoles" :key="r.id" :value="r.id">
           {{ r.name }}
@@ -119,17 +121,17 @@
     </el-dialog>
 
     <!-- 权限覆盖 -->
-    <el-dialog v-model="overridesVisible" :title="t('admin.overrides.title')" width="560px">
+    <el-dialog v-model="overridesVisible" :title="t('admin.overrides.title')" :width="dialogWidthMd">
       <div class="override-add">
         <el-select
           v-model="ovPermission"
           filterable
           :placeholder="t('admin.roles.permissions')"
-          style="width: 240px;"
+          :style="{ width: isMobile ? '100%' : '240px' }"
         >
           <el-option v-for="code in allCodes" :key="code" :label="code" :value="code" />
         </el-select>
-        <el-select v-model="ovEffect" style="width: 120px;">
+        <el-select v-model="ovEffect" :style="{ width: isMobile ? '100%' : '120px' }">
           <el-option :label="t('admin.overrides.grant')" value="grant" />
           <el-option :label="t('admin.overrides.deny')" value="deny" />
         </el-select>
@@ -165,8 +167,8 @@
     </el-dialog>
 
     <!-- 重置密码 -->
-    <el-dialog v-model="resetVisible" :title="t('admin.users.resetPassword')" width="440px">
-      <el-form label-width="100px">
+    <el-dialog v-model="resetVisible" :title="t('admin.users.resetPassword')" :width="dialogWidthSm">
+      <el-form label-width="100px" :label-position="isMobile ? 'top' : 'right'">
         <el-form-item :label="t('admin.users.newPassword')">
           <el-input
             v-model="resetForm.password"
@@ -193,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -206,9 +208,14 @@ import { formatApiError } from "@/utils/errors";
 import { useAuthStore } from "@/stores/auth";
 import PasswordStrength from "@/components/PasswordStrength.vue";
 import { checkRules } from "@/utils/password";
+import { useBreakpoint } from "@/composables/useBreakpoint";
 
 const { t } = useI18n();
 const auth = useAuthStore();
+const { isMobile } = useBreakpoint();
+
+const dialogWidthSm = computed(() => isMobile.value ? '92%' : '440px');
+const dialogWidthMd = computed(() => isMobile.value ? '92%' : '560px');
 
 const users = ref<AdminUser[]>([]);
 const allRoles = ref<Role[]>([]);
@@ -399,6 +406,7 @@ onMounted(reload);
 }
 .override-add {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
 }
@@ -407,5 +415,6 @@ onMounted(reload);
   padding: var(--space-2);
 }
 .active-switch { margin-left: 12px; }
+.table-scroll { overflow-x: auto; }
 :deep(.el-table th.el-table__cell > .cell) { text-align: center; }
 </style>

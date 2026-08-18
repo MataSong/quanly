@@ -7,6 +7,7 @@
       </el-button>
     </div>
 
+    <div class="table-scroll">
     <el-table :data="roles" size="small" border v-loading="tableLoading">
       <el-table-column prop="name" :label="t('admin.roles.columns.name')" width="200" />
       <el-table-column prop="description" :label="t('admin.roles.columns.description')" />
@@ -37,9 +38,10 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
-      <el-form label-width="90px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" :width="dialogWidth">
+      <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'">
         <el-form-item :label="t('admin.roles.name')">
           <el-input v-model="form.name" />
         </el-form-item>
@@ -84,8 +86,12 @@ import {
   type PermissionsRegistry, type PermGroup, type PermItem, type Role,
 } from "@/api/accounts";
 import { formatApiError } from "@/utils/errors";
+import { useBreakpoint } from "@/composables/useBreakpoint";
 
 const { t, locale } = useI18n();
+const { isMobile } = useBreakpoint();
+
+const dialogWidth = computed(() => isMobile.value ? '92%' : '640px');
 
 const roles = ref<Role[]>([]);
 const registry = ref<PermissionsRegistry>({});
@@ -191,6 +197,7 @@ onMounted(async () => {
   color: var(--gray-700);
 }
 .perm-empty { color: var(--gray-500); }
+.table-scroll { overflow-x: auto; }
 :deep(.el-table th.el-table__cell > .cell) { text-align: center; }
 :deep(.el-table td.el-table__cell > .cell) { text-align: center; }
 </style>

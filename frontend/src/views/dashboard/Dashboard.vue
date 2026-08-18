@@ -114,71 +114,35 @@
             :image-size="48"
           />
         </div>
-        <el-table
+        <ResponsiveTable
           v-if="summary?.currencies?.length"
+          :columns="currencyColumns"
           :data="summary.currencies"
-          size="small"
-          border
+          row-key="ccy"
+          :empty-text="t('dashboard.noData')"
           style="margin-top: 16px"
-        >
-          <el-table-column prop="ccy" :label="t('dashboard.ccy')" width="100" />
-          <el-table-column prop="eqUsd" :label="t('dashboard.eqUsd')" align="right" />
-          <el-table-column :label="t('dashboard.ratio')" align="right" width="100">
-            <template #default="{ row }">
-              {{ calcPercent(row.eqUsd) }}%
-            </template>
-          </el-table-column>
-          <el-table-column prop="availBal" :label="t('dashboard.availBal')" align="right" />
-          <el-table-column prop="frozenBal" :label="t('dashboard.frozenBal')" align="right" />
-        </el-table>
+        />
       </div>
 
       <!-- Positions table -->
       <div class="board-card" v-loading="loading">
         <div class="card-title">{{ t("dashboard.positions") }}</div>
-        <el-table :data="summary?.positions ?? []" size="small" border>
-          <el-table-column prop="instId" :label="t('dashboard.instId')" min-width="140" />
-          <el-table-column prop="posSide" :label="t('dashboard.posSide')" width="80" align="center" />
-          <el-table-column prop="pos" :label="t('dashboard.pos')" width="80" align="right" />
-          <el-table-column prop="avgPx" :label="t('dashboard.avgPx')" align="right" />
-          <el-table-column prop="upl" :label="t('dashboard.upl')" align="right">
-            <template #default="{ row }">
-              <span :class="parseFloat(row.upl) >= 0 ? 'profit' : 'loss'">
-                {{ row.upl }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="notionalUsd" :label="t('dashboard.notionalUsd')" align="right" min-width="130" />
-          <el-table-column prop="lever" :label="t('dashboard.lever')" width="80" align="center" />
-          <template #empty>
-            <el-empty :description="t('dashboard.noData')" :image-size="48" />
-          </template>
-        </el-table>
+        <ResponsiveTable
+          :columns="positionColumns"
+          :data="summary?.positions ?? []"
+          row-key="instId"
+          :empty-text="t('dashboard.noData')"
+        />
       </div>
 
       <!-- Bills table -->
       <div class="board-card" v-loading="loading">
         <div class="card-title">{{ t("dashboard.bills") }}</div>
-        <el-table :data="summary?.bills ?? []" size="small" border>
-          <el-table-column :label="t('dashboard.billTime')" min-width="160">
-            <template #default="{ row }">
-              {{ formatTs(row.ts) }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="type" :label="t('dashboard.billType')" width="80" align="center" />
-          <el-table-column prop="ccy" :label="t('dashboard.billCcy')" width="90" />
-          <el-table-column prop="balChg" :label="t('dashboard.balChg')" align="right">
-            <template #default="{ row }">
-              <span :class="parseFloat(row.balChg) >= 0 ? 'profit' : 'loss'">
-                {{ row.balChg }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="fee" :label="t('dashboard.fee')" align="right" />
-          <template #empty>
-            <el-empty :description="t('dashboard.noData')" :image-size="48" />
-          </template>
-        </el-table>
+        <ResponsiveTable
+          :columns="billColumns"
+          :data="summary?.bills ?? []"
+          :empty-text="t('dashboard.noData')"
+        />
       </div>
     </template>
   </div>
@@ -192,9 +156,40 @@ import { TrendCharts } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 import { listCredentials, type Credential } from "@/api/credentials";
 import { getAssetsSummary, type AssetsSummary } from "@/api/assets";
+import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue";
 
 const { t } = useI18n();
 const auth = useAuthStore();
+
+// ── 表格列定义(ResponsiveTable) ────────────────────────────────────────────────
+const currencyColumns = computed<RTColumn[]>(() => [
+  { prop: "ccy", label: t("dashboard.ccy"), width: 100 },
+  { prop: "eqUsd", label: t("dashboard.eqUsd"), align: "right" },
+  { prop: "ratio", label: t("dashboard.ratio"), align: "right", width: 100,
+    formatter: (row) => `${calcPercent(row.eqUsd)}%` },
+  { prop: "availBal", label: t("dashboard.availBal"), align: "right" },
+  { prop: "frozenBal", label: t("dashboard.frozenBal"), align: "right" },
+]);
+
+const positionColumns = computed<RTColumn[]>(() => [
+  { prop: "instId", label: t("dashboard.instId"), minWidth: 140 },
+  { prop: "posSide", label: t("dashboard.posSide"), width: 80, align: "center" },
+  { prop: "pos", label: t("dashboard.pos"), width: 80, align: "right" },
+  { prop: "avgPx", label: t("dashboard.avgPx"), align: "right" },
+  { prop: "upl", label: t("dashboard.upl"), align: "right",
+    cellClass: (_row, v) => (parseFloat(v) >= 0 ? "profit" : "loss") },
+  { prop: "notionalUsd", label: t("dashboard.notionalUsd"), align: "right", minWidth: 130 },
+  { prop: "lever", label: t("dashboard.lever"), width: 80, align: "center" },
+]);
+
+const billColumns = computed<RTColumn[]>(() => [
+  { prop: "ts", label: t("dashboard.billTime"), minWidth: 160, formatter: (row) => formatTs(row.ts) },
+  { prop: "type", label: t("dashboard.billType"), width: 80, align: "center" },
+  { prop: "ccy", label: t("dashboard.billCcy"), width: 90 },
+  { prop: "balChg", label: t("dashboard.balChg"), align: "right",
+    cellClass: (_row, v) => (parseFloat(v) >= 0 ? "profit" : "loss") },
+  { prop: "fee", label: t("dashboard.fee"), align: "right" },
+]);
 
 // ── Credentials ───────────────────────────────────────────────────────────────
 const credentials = ref<Credential[]>([]);

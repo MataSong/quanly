@@ -76,8 +76,10 @@ import type { IChartApi, ISeriesApi, CandlestickData, LogicalRange } from "light
 import { getCandles, getSymbols } from "@/api/market";
 import type { Candle, Symbol as OkxSymbol } from "@/api/market";
 import { useMarketSocket } from "@/composables/useMarketSocket";
+import { useBreakpoint } from "@/composables/useBreakpoint";
 
 const { t } = useI18n();
+const { isMobile } = useBreakpoint();
 
 const BAR_OPTIONS = ["1m", "3m", "5m", "15m", "30m", "1H", "4H", "1D"];
 const TZ_KEY = "quanly:market_tz";
@@ -193,7 +195,7 @@ function initChart() {
   }
   chart = createChart(chartContainer.value, {
     width: chartContainer.value.clientWidth,
-    height: 420,
+    height: isMobile.value ? 260 : 420,
     layout: {
       background: { color: "#ffffff" },
       textColor: "#333",
@@ -315,6 +317,10 @@ function startSocket() {
   wsDisconnect = disconnect;
 }
 
+watch(isMobile, (mobile) => {
+  chart?.applyOptions({ height: mobile ? 260 : 420 });
+});
+
 // ---------------------------------------------------------------- symbol/bar/tz change
 
 async function onSymbolChange() {
@@ -339,7 +345,7 @@ function setupResize() {
   if (!chartContainer.value || !chart) return;
   resizeObserver = new ResizeObserver((entries) => {
     for (const entry of entries) {
-      chart?.applyOptions({ width: entry.contentRect.width });
+      chart?.applyOptions({ width: entry.contentRect.width, height: isMobile.value ? 260 : 420 });
     }
   });
   resizeObserver.observe(chartContainer.value);
@@ -397,6 +403,11 @@ onUnmounted(() => {
   color: var(--gray-600);
 }
 
+@media (max-width: 768px) {
+  .controls { flex-direction: column; align-items: stretch; }
+  .controls :deep(.el-select) { width: 100% !important; }
+}
+
 .chart-wrap {
   position: relative;
   background: #fff;
@@ -404,6 +415,10 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   overflow: hidden;
   min-height: 430px;
+}
+
+@media (max-width: 768px) {
+  .chart-wrap { min-height: 270px; }
 }
 
 .chart-container {

@@ -11,7 +11,7 @@
       <el-select
         v-model="selectedCredId"
         :placeholder="t('trading.selectCredential')"
-        style="width: 320px"
+        :style="{ width: isMobile ? '100%' : '320px' }"
         :loading="credLoading"
         @change="onCredChange"
       >
@@ -65,7 +65,7 @@
             <el-radio-button value="SWAP">{{ t("trading.swap") }}</el-radio-button>
           </el-radio-group>
 
-          <el-form label-width="110px" class="order-form">
+          <el-form label-width="110px" class="order-form" :label-position="isMobile ? 'top' : 'right'">
             <!-- Instrument ID -->
             <el-form-item :label="t('trading.instId')">
               <el-autocomplete
@@ -146,79 +146,64 @@
         <!-- Right: monitor panels -->
         <div class="monitor-col">
           <!-- Balance -->
-          <div class="card monitor-card">
+          <div class="card monitor-card" v-loading="balanceLoading">
             <div class="card-title-row">
               <span class="card-title">{{ t("trading.balance") }}</span>
               <el-button size="small" :loading="balanceLoading" @click="reloadBalance">
                 {{ t("common.refresh") }}
               </el-button>
             </div>
-            <el-table :data="balance" size="small" border v-loading="balanceLoading">
-              <el-table-column prop="ccy" :label="t('trading.ccy')" width="80" />
-              <el-table-column prop="bal" :label="t('trading.bal')" align="right" />
-              <el-table-column prop="availBal" :label="t('trading.availBal')" align="right" />
-              <el-table-column prop="frozenBal" :label="t('trading.frozenBal')" align="right" />
-            </el-table>
+            <ResponsiveTable
+              :columns="balanceCols"
+              :data="balance"
+              :empty-text="t('common.empty')"
+            />
           </div>
 
           <!-- Positions (SWAP only) -->
-          <div v-if="instType === 'SWAP'" class="card monitor-card">
+          <div v-if="instType === 'SWAP'" class="card monitor-card" v-loading="posLoading">
             <div class="card-title-row">
               <span class="card-title">{{ t("trading.positions") }}</span>
               <el-button size="small" :loading="posLoading" @click="reloadPositions">
                 {{ t("common.refresh") }}
               </el-button>
             </div>
-            <el-table :data="positions" size="small" border v-loading="posLoading">
-              <el-table-column prop="instId" :label="t('trading.instId')" min-width="120" />
-              <el-table-column prop="posSide" :label="t('trading.posSide')" width="70" align="center" />
-              <el-table-column prop="pos" :label="t('trading.pos')" width="70" align="right" />
-              <el-table-column prop="avgPx" :label="t('trading.avgPx')" align="right" />
-              <el-table-column prop="upl" :label="t('trading.upl')" align="right">
-                <template #default="{ row }">
-                  <span :class="parseFloat(row.upl) >= 0 ? 'profit' : 'loss'">
-                    {{ row.upl }}
-                  </span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="lever" :label="t('trading.lever')" width="60" align="center" />
-            </el-table>
+            <ResponsiveTable
+              :columns="positionsCols"
+              :data="positions"
+              :empty-text="t('common.empty')"
+            />
           </div>
 
           <!-- Open orders -->
-          <div class="card monitor-card">
+          <div class="card monitor-card" v-loading="ordersLoading">
             <div class="card-title-row">
               <span class="card-title">{{ t("trading.openOrders") }}</span>
               <el-button size="small" :loading="ordersLoading" @click="reloadOrders">
                 {{ t("common.refresh") }}
               </el-button>
             </div>
-            <el-table :data="orders" size="small" border v-loading="ordersLoading">
-              <el-table-column prop="instId" :label="t('trading.instId')" min-width="110" />
-              <el-table-column prop="side" :label="t('trading.side')" width="60" align="center">
-                <template #default="{ row }">
-                  <span :class="row.side === 'buy' ? 'buy-text' : 'sell-text'">
-                    {{ row.side === 'buy' ? t('trading.buy') : t('trading.sell') }}
-                  </span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="ordType" :label="t('trading.ordType')" width="70" align="center" />
-              <el-table-column prop="sz" :label="t('trading.size')" width="80" align="right" />
-              <el-table-column prop="px" :label="t('trading.price')" align="right" />
-              <el-table-column prop="fillSz" :label="t('trading.filled')" align="right" />
-              <el-table-column :label="t('common.actions')" width="80" align="center">
-                <template #default="{ row }">
-                  <el-button
-                    size="small"
-                    type="danger"
-                    :loading="cancellingId === row.ordId"
-                    @click="onCancelOrder(row)"
-                  >
-                    {{ t("trading.cancel") }}
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <ResponsiveTable
+              :columns="ordersCols"
+              :data="orders"
+              :empty-text="t('common.empty')"
+            >
+              <template #cell-side="{ row }">
+                <span :class="row.side === 'buy' ? 'buy-text' : 'sell-text'">
+                  {{ row.side === 'buy' ? t('trading.buy') : t('trading.sell') }}
+                </span>
+              </template>
+              <template #cell-actions="{ row }">
+                <el-button
+                  size="small"
+                  type="danger"
+                  :loading="cancellingId === row.ordId"
+                  @click="onCancelOrder(row as OrderItem)"
+                >
+                  {{ t("trading.cancel") }}
+                </el-button>
+              </template>
+            </ResponsiveTable>
           </div>
         </div>
       </div>
@@ -247,8 +232,11 @@ import {
   type BalanceItem,
 } from "@/api/trading";
 import { formatApiError } from "@/utils/errors";
+import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue";
+import { useBreakpoint } from "@/composables/useBreakpoint";
 
 const { t } = useI18n();
+const { isMobile } = useBreakpoint();
 
 // ── Credentials ───────────────────────────────────────────────────────────────
 const credentials = ref<Credential[]>([]);
@@ -477,6 +465,35 @@ function reloadAll() {
   reloadOrders();
 }
 
+// ── Responsive table column definitions ───────────────────────────────────────
+
+const balanceCols = computed<RTColumn[]>(() => [
+  { prop: "ccy", label: t("trading.ccy"), width: 80 },
+  { prop: "bal", label: t("trading.bal"), align: "right" },
+  { prop: "availBal", label: t("trading.availBal"), align: "right" },
+  { prop: "frozenBal", label: t("trading.frozenBal"), align: "right" },
+]);
+
+const positionsCols = computed<RTColumn[]>(() => [
+  { prop: "instId", label: t("trading.instId"), minWidth: 120 },
+  { prop: "posSide", label: t("trading.posSide"), width: 70, align: "center" },
+  { prop: "pos", label: t("trading.pos"), width: 70, align: "right" },
+  { prop: "avgPx", label: t("trading.avgPx"), align: "right" },
+  { prop: "upl", label: t("trading.upl"), align: "right",
+    cellClass: (_row: Record<string, any>, v: any) => (parseFloat(v) >= 0 ? "profit" : "loss") },
+  { prop: "lever", label: t("trading.lever"), width: 60, align: "center" },
+]);
+
+const ordersCols = computed<RTColumn[]>(() => [
+  { prop: "instId", label: t("trading.instId"), minWidth: 110 },
+  { prop: "side", label: t("trading.side"), width: 60, align: "center" },
+  { prop: "ordType", label: t("trading.ordType"), width: 70, align: "center" },
+  { prop: "sz", label: t("trading.size"), width: 80, align: "right" },
+  { prop: "px", label: t("trading.price"), align: "right" },
+  { prop: "fillSz", label: t("trading.filled"), align: "right" },
+  { prop: "actions", label: t("common.actions"), width: 80, align: "center" },
+]);
+
 onMounted(async () => {
   await loadCredentials();
 });
@@ -526,7 +543,7 @@ onMounted(async () => {
   align-items: start;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .main-grid {
     grid-template-columns: 1fr;
   }

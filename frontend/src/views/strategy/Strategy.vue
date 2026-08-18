@@ -29,79 +29,63 @@
     </div>
 
     <!-- My runs table -->
-    <div class="card runs-card">
+    <div class="card runs-card" v-loading="runsLoading">
       <div class="card-title-row">
         <span class="card-title">{{ t("strategy.runs") }}</span>
         <el-button size="small" :loading="runsLoading" @click="loadRuns">
           {{ t("common.refresh") }}
         </el-button>
       </div>
-      <el-table :data="runs" size="small" border v-loading="runsLoading" empty-text="">
-        <!-- Problem 2: show run name as primary column -->
-        <el-table-column :label="t('strategy.colName')" min-width="160">
-          <template #default="{ row }">{{ row.name || row.strategy_name }}</template>
-        </el-table-column>
-        <el-table-column :label="t('strategy.colStrategy')" min-width="120">
-          <template #default="{ row }">{{ row.strategy_name }}</template>
-        </el-table-column>
-        <el-table-column :label="t('strategy.colSymbol')" width="140">
-          <template #default="{ row }">{{ row.symbol }}</template>
-        </el-table-column>
-        <el-table-column :label="t('strategy.colEnv')" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.credential_env === 'live' ? 'danger' : 'success'" size="small">
-              {{ row.credential_env === 'live' ? t('strategy.envLive') : t('strategy.envSim') }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('strategy.colStatus')" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">
-              {{ t(`strategy.status.${row.status}`) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('strategy.colCredential')" min-width="120">
-          <template #default="{ row }">{{ row.credential_label }}</template>
-        </el-table-column>
-        <el-table-column :label="t('common.createdAt')" width="160">
-          <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('common.actions')" width="200" align="center" fixed="right">
-          <template #default="{ row }">
-            <!-- Problem 3: start visible for pending/stopped/error -->
-            <el-button
-              v-if="['pending', 'stopped', 'error'].includes(row.status)"
-              size="small"
-              type="success"
-              :loading="actionId === row.id && actionType === 'start'"
-              @click="onStart(row)"
-            >
-              {{ t("strategy.start") }}
-            </el-button>
-            <el-button
-              v-if="row.status === 'running'"
-              size="small"
-              type="danger"
-              :loading="actionId === row.id && actionType === 'stop'"
-              @click="onStop(row)"
-            >
-              {{ t("strategy.stop") }}
-            </el-button>
-            <el-button size="small" @click="openLogs(row)">
-              {{ t("strategy.logs") }}
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="!runs.length && !runsLoading" :description="t('common.empty')" style="padding: 20px 0" />
+      <ResponsiveTable
+        :columns="runsCols"
+        :data="runs"
+        :empty-text="t('common.empty')"
+      >
+        <template #cell-name="{ row }">
+          {{ row.name || row.strategy_name }}
+        </template>
+        <template #cell-credential_env="{ row }">
+          <el-tag :type="row.credential_env === 'live' ? 'danger' : 'success'" size="small">
+            {{ row.credential_env === 'live' ? t('strategy.envLive') : t('strategy.envSim') }}
+          </el-tag>
+        </template>
+        <template #cell-status="{ row }">
+          <el-tag :type="statusTagType(row.status)" size="small">
+            {{ t(`strategy.status.${row.status}`) }}
+          </el-tag>
+        </template>
+        <template #cell-actions="{ row }">
+          <!-- start visible for pending/stopped/error -->
+          <el-button
+            v-if="['pending', 'stopped', 'error'].includes(row.status)"
+            size="small"
+            type="success"
+            :loading="actionId === row.id && actionType === 'start'"
+            @click="onStart(row as StrategyRun)"
+          >
+            {{ t("strategy.start") }}
+          </el-button>
+          <el-button
+            v-if="row.status === 'running'"
+            size="small"
+            type="danger"
+            :loading="actionId === row.id && actionType === 'stop'"
+            @click="onStop(row as StrategyRun)"
+          >
+            {{ t("strategy.stop") }}
+          </el-button>
+          <el-button size="small" @click="openLogs(row as StrategyRun)">
+            {{ t("strategy.logs") }}
+          </el-button>
+        </template>
+      </ResponsiveTable>
     </div>
 
     <!-- ── Create Run Dialog ───────────────────────────────────────────────── -->
     <el-dialog
       v-model="createDialogVisible"
       :title="t('strategy.newRun')"
-      width="500px"
+      :width="dialogWidthCreate"
       :close-on-click-modal="false"
     >
       <!-- Live-env warning -->
@@ -114,7 +98,7 @@
         style="margin-bottom: 16px"
       />
 
-      <el-form :model="createForm" label-width="120px">
+      <el-form :model="createForm" label-width="120px" :label-position="isMobile ? 'top' : 'right'">
         <!-- Problem 2: optional run name field -->
         <el-form-item :label="t('strategy.runName')">
           <el-input
@@ -221,7 +205,7 @@
     <el-dialog
       v-model="logsDialogVisible"
       :title="logsDialogTitle"
-      width="760px"
+      :width="dialogWidthLogs"
       :close-on-click-modal="false"
       @close="onLogsDialogClose"
     >
@@ -282,8 +266,14 @@ import {
 import { getSymbols, type Symbol as MarketSymbol } from "@/api/market";
 import { useStrategySocket } from "@/composables/useStrategySocket";
 import { formatApiError } from "@/utils/errors";
+import { useBreakpoint } from "@/composables/useBreakpoint";
+import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue";
 
 const { t } = useI18n();
+const { isMobile } = useBreakpoint();
+
+const dialogWidthCreate = computed(() => isMobile.value ? '92%' : '500px');
+const dialogWidthLogs = computed(() => isMobile.value ? '92%' : '760px');
 
 // ── Strategies (built-in list) ────────────────────────────────────────────────
 
@@ -629,6 +619,20 @@ function formatLogTs(ts: string): string {
     return ts;
   }
 }
+
+// ── Responsive table columns ──────────────────────────────────────────────────
+
+const runsCols = computed<RTColumn[]>(() => [
+  { prop: "name", label: t("strategy.colName"), minWidth: 160 },
+  { prop: "strategy_name", label: t("strategy.colStrategy"), minWidth: 120 },
+  { prop: "symbol", label: t("strategy.colSymbol"), width: 140 },
+  { prop: "credential_env", label: t("strategy.colEnv"), width: 90, align: "center" },
+  { prop: "status", label: t("strategy.colStatus"), width: 100, align: "center" },
+  { prop: "credential_label", label: t("strategy.colCredential"), minWidth: 120 },
+  { prop: "created_at", label: t("common.createdAt"), width: 160,
+    formatter: (row) => formatDate(row.created_at) },
+  { prop: "actions", label: t("common.actions"), width: 200, align: "center", fixed: "right" },
+]);
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 

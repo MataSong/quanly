@@ -82,5 +82,5 @@ watch(activeTab, async (tab) => {
 <style scoped>
 .permission-admin { padding: 0; }
 .admin-tabs { margin-top: 0; }
-.perm-tab { margin-top: var(--space-4, 16px); }
+.perm-tab { margin-top: var(--space-4, 16px); overflow-x: auto; }
 </style>

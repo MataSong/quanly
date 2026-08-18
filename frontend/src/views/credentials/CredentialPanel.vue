@@ -7,6 +7,7 @@
       </el-button>
     </div>
 
+    <div class="table-scroll">
     <el-table :data="credentials" size="small" border v-loading="tableLoading">
       <el-table-column prop="env" :label="t('credentials.columns.env')" width="100" align="center">
         <template #default="{ row }">
@@ -39,10 +40,11 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <!-- 新建密钥 dialog -->
-    <el-dialog v-model="createVisible" :title="t('credentials.create')" width="480px" destroy-on-close>
-      <el-form label-width="110px">
+    <el-dialog v-model="createVisible" :title="t('credentials.create')" :width="dialogWidth" destroy-on-close>
+      <el-form label-width="110px" :label-position="isMobile ? 'top' : 'right'">
         <el-form-item :label="t('credentials.form.env')">
           <el-select v-model="form.env" style="width: 100%;">
             <el-option :label="t('credentials.envSim')" value="sim" />
@@ -88,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -98,8 +100,12 @@ import {
   type Credential,
 } from "@/api/credentials";
 import { formatApiError } from "@/utils/errors";
+import { useBreakpoint } from "@/composables/useBreakpoint";
 
 const { t } = useI18n();
+const { isMobile } = useBreakpoint();
+
+const dialogWidth = computed(() => isMobile.value ? '92%' : '480px');
 
 const credentials = ref<Credential[]>([]);
 const tableLoading = ref(false);
@@ -210,5 +216,6 @@ onMounted(reload);
   font-weight: 600;
   color: var(--gray-800);
 }
+.table-scroll { overflow-x: auto; }
 :deep(.el-table th.el-table__cell > .cell) { text-align: center; }
 </style>

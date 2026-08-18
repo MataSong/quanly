@@ -301,7 +301,7 @@ h2 {
   font-size: 12px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .glass-card { width: 90%; padding: 24px; }
   .login-blob-1 { transform: scale(0.6); }
   .login-blob-2 { transform: scale(0.6); }

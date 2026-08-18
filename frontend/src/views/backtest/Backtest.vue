@@ -26,46 +26,48 @@
           {{ t("common.refresh") }}
         </el-button>
       </div>
-      <el-table
-        :data="backtests"
-        size="small"
-        border
-        v-loading="listLoading"
-        empty-text=""
-        highlight-current-row
-        @current-change="onRowSelect"
-      >
-        <el-table-column :label="t('backtest.colStrategy')" min-width="130">
-          <template #default="{ row }">{{ row.strategy_name ?? row.strategy }}</template>
-        </el-table-column>
-        <el-table-column :label="t('backtest.colSymbol')" width="130">
-          <template #default="{ row }">{{ row.symbol }}</template>
-        </el-table-column>
-        <el-table-column :label="t('backtest.colBar')" width="80" align="center">
-          <template #default="{ row }">{{ row.bar }}</template>
-        </el-table-column>
-        <el-table-column :label="t('backtest.colStatus')" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">
-              {{ t(`backtest.status.${row.status}`) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('backtest.colTotalReturn')" width="110" align="right">
-          <template #default="{ row }">
-            <span
-              v-if="row.metrics?.total_return != null"
-              :class="row.metrics.total_return >= 0 ? 'pnl-pos' : 'pnl-neg'"
-            >
-              {{ fmtPct(row.metrics.total_return) }}
-            </span>
-            <span v-else class="text-muted">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.createdAt')" width="160">
-          <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
-        </el-table-column>
-      </el-table>
+      <div class="table-scroll">
+        <el-table
+          :data="backtests"
+          size="small"
+          border
+          v-loading="listLoading"
+          empty-text=""
+          highlight-current-row
+          @current-change="onRowSelect"
+        >
+          <el-table-column :label="t('backtest.colStrategy')" min-width="130">
+            <template #default="{ row }">{{ row.strategy_name ?? row.strategy }}</template>
+          </el-table-column>
+          <el-table-column :label="t('backtest.colSymbol')" width="130">
+            <template #default="{ row }">{{ row.symbol }}</template>
+          </el-table-column>
+          <el-table-column :label="t('backtest.colBar')" width="80" align="center">
+            <template #default="{ row }">{{ row.bar }}</template>
+          </el-table-column>
+          <el-table-column :label="t('backtest.colStatus')" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="statusTagType(row.status)" size="small">
+                {{ t(`backtest.status.${row.status}`) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('backtest.colTotalReturn')" width="110" align="right">
+            <template #default="{ row }">
+              <span
+                v-if="row.metrics?.total_return != null"
+                :class="row.metrics.total_return >= 0 ? 'pnl-pos' : 'pnl-neg'"
+              >
+                {{ fmtPct(row.metrics.total_return) }}
+              </span>
+              <span v-else class="text-muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('common.createdAt')" width="160">
+            <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
       <el-empty
         v-if="!backtests.length && !listLoading"
         :description="t('common.empty')"
@@ -156,39 +158,20 @@
           <div class="card-title-row">
             <span class="card-title">{{ t("backtest.trades") }}</span>
           </div>
-          <el-table :data="detail.trades" size="small" border empty-text="">
-            <el-table-column :label="t('backtest.colSide')" width="70" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.side === 'buy' ? 'success' : 'danger'" size="small">
-                  {{ row.side === "buy" ? t("backtest.buy") : t("backtest.sell") }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('backtest.colTime')" width="160">
-              <template #default="{ row }">{{ formatTs(row.ts) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('backtest.colPrice')" width="120" align="right">
-              <template #default="{ row }">{{ fmtNum(row.price) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('backtest.colSz')" width="100" align="right">
-              <template #default="{ row }">{{ fmtNum(row.sz) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('backtest.colFee')" width="100" align="right">
-              <template #default="{ row }">{{ fmtNum(row.fee) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('backtest.colPnl')" width="110" align="right">
-              <template #default="{ row }">
-                <span :class="row.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'">
-                  {{ fmtNum(row.pnl) }}
-                </span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-empty
-            v-if="!detail.trades.length"
-            :description="t('common.empty')"
-            style="padding: 20px 0"
-          />
+          <ResponsiveTable
+            :columns="tradesCols"
+            :data="detail.trades"
+            :empty-text="t('common.empty')"
+          >
+            <template #cell-side="{ row }">
+              <el-tag :type="row.side === 'buy' ? 'success' : 'danger'" size="small">
+                {{ row.side === "buy" ? t("backtest.buy") : t("backtest.sell") }}
+              </el-tag>
+            </template>
+            <template #cell-pnl="{ row }">
+              <span :class="row.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'">{{ fmtNum(row.pnl) }}</span>
+            </template>
+          </ResponsiveTable>
         </div>
       </template>
     </template>
@@ -197,10 +180,10 @@
     <el-dialog
       v-model="createDialogVisible"
       :title="t('backtest.newBacktest')"
-      width="520px"
+      :width="dialogWidth"
       :close-on-click-modal="false"
     >
-      <el-form :model="form" label-width="110px">
+      <el-form :model="form" label-width="110px" :label-position="isMobile ? 'top' : 'right'">
         <!-- Strategy -->
         <el-form-item :label="t('backtest.strategy')">
           <el-select
@@ -336,8 +319,13 @@ import {
 import { listStrategies, type Strategy } from "@/api/strategy";
 import { getSymbols, type Symbol as MarketSymbol } from "@/api/market";
 import { formatApiError } from "@/utils/errors";
+import { useBreakpoint } from "@/composables/useBreakpoint";
+import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue";
 
 const { t } = useI18n();
+const { isMobile } = useBreakpoint();
+
+const dialogWidth = computed(() => isMobile.value ? '92%' : '520px');
 
 const BAR_OPTIONS = ["1m", "5m", "15m", "1H", "4H", "1D"];
 
@@ -456,7 +444,7 @@ function renderChart(d: BacktestDetail) {
 
   chart = createChart(chartContainer.value, {
     width: chartContainer.value.clientWidth,
-    height: 320,
+    height: isMobile.value ? 240 : 320,
     layout: {
       background: { color: "#ffffff" },
       textColor: "#333",
@@ -486,7 +474,7 @@ function renderChart(d: BacktestDetail) {
 
   resizeObserver = new ResizeObserver((entries) => {
     for (const entry of entries) {
-      chart?.applyOptions({ width: entry.contentRect.width });
+      chart?.applyOptions({ width: entry.contentRect.width, height: isMobile.value ? 240 : 320 });
     }
   });
   resizeObserver.observe(chartContainer.value);
@@ -645,7 +633,26 @@ function formatTs(ts: number): string {
   return new Date(ts).toLocaleString();
 }
 
+// ── Responsive table columns ──────────────────────────────────────────────────
+
+const tradesCols = computed<RTColumn[]>(() => [
+  { prop: "side", label: t("backtest.colSide"), width: 70, align: "center" },
+  { prop: "ts", label: t("backtest.colTime"), width: 160,
+    formatter: (row) => formatTs(row.ts) },
+  { prop: "price", label: t("backtest.colPrice"), width: 120, align: "right",
+    formatter: (row) => fmtNum(row.price) },
+  { prop: "sz", label: t("backtest.colSz"), width: 100, align: "right",
+    formatter: (row) => fmtNum(row.sz) },
+  { prop: "fee", label: t("backtest.colFee"), width: 100, align: "right",
+    formatter: (row) => fmtNum(row.fee) },
+  { prop: "pnl", label: t("backtest.colPnl"), width: 110, align: "right" },
+]);
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+watch(isMobile, (mobile) => {
+  chart?.applyOptions({ height: mobile ? 240 : 320 });
+});
 
 onMounted(async () => {
   await Promise.all([loadList(), loadStrategiesList(), loadSymbols()]);
@@ -682,6 +689,10 @@ onUnmounted(() => {
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
+}
+
+.table-scroll {
+  overflow-x: auto;
 }
 
 .card-title-row {
@@ -737,6 +748,10 @@ onUnmounted(() => {
   background: #fff;
   border-radius: var(--radius-md);
   overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .chart-wrap { min-height: 250px; }
 }
 
 .chart-container {
