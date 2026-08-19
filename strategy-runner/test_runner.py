@@ -336,8 +336,16 @@ TRIAL_ENV = {
 def _run_trial_subprocess(env_overrides: dict) -> dict:
     """Run runner.py in TRIAL_MODE as a subprocess; return parsed stdout JSON.
 
-    Fully offline (no requests needed). Logs go to stderr, JSON result to stdout.
+    Fully offline (no requests needed). Logs AND user print() go to stderr; stdout
+    carries ONLY the result JSON, so we json.loads(stdout.strip()) directly.
     """
+    proc = _run_trial_raw(env_overrides)
+    # stdout must be exactly the result JSON — no need to hunt for the last line.
+    return json.loads(proc.stdout.strip())
+
+
+def _run_trial_raw(env_overrides: dict):
+    """Run runner.py in TRIAL_MODE; return the completed subprocess (stdout+stderr)."""
     import os
     import subprocess
 
@@ -345,7 +353,7 @@ def _run_trial_subprocess(env_overrides: dict) -> dict:
     env.update(TRIAL_ENV)
     env.update(env_overrides)
     here = os.path.dirname(os.path.abspath(__file__))
-    proc = subprocess.run(
+    return subprocess.run(
         [sys.executable, os.path.join(here, "runner.py")],
         env=env,
         capture_output=True,
@@ -353,9 +361,6 @@ def _run_trial_subprocess(env_overrides: dict) -> dict:
         cwd=here,
         timeout=60,
     )
-    # Result is the (single) JSON line on stdout.
-    line = proc.stdout.strip().splitlines()[-1]
-    return json.loads(line)
 
 
 def _synthetic_candles(closes: list[float]) -> str:
@@ -456,6 +461,30 @@ class TestTrialMode(unittest.TestCase):
         })
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["signal_count"], 4)
+
+    def test_trial_user_print_goes_to_stderr_stdout_clean(self):
+        # User print() must NOT pollute stdout — stdout is ONLY the result JSON so T3
+        # can json.loads(stdout.strip()) directly and a user cannot forge the result.
+        code = (
+            "def on_tick(ctx, params):\n"
+            "    print('FORGED {\"ok\": false, \"error\": \"hax\"}')\n"
+            "    print('debug line from strategy')\n"
+        )
+        proc = _run_trial_raw({
+            "USER_CODE": code,
+            "TRIAL_CANDLES": _synthetic_candles([1.0, 2.0, 3.0]),
+        })
+        # stdout: exactly one JSON object, directly parseable (no last-line hunting).
+        stdout = proc.stdout.strip()
+        self.assertEqual(len(stdout.splitlines()), 1, f"stdout not clean: {stdout!r}")
+        result = json.loads(stdout)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["signal_count"], 0)
+        self.assertNotIn("FORGED", stdout)
+        self.assertNotIn("debug line", stdout)
+        # user print() landed on stderr instead.
+        self.assertIn("FORGED", proc.stderr)
+        self.assertIn("debug line from strategy", proc.stderr)
 
 
 if __name__ == "__main__":

@@ -139,13 +139,23 @@ def _make_safe_builtins() -> dict[str, Any]:
     raw one), globals, locals, vars, input, getattr, setattr, delattr, and everything
     else not in the whitelist above. A controlled __import__ (below) is substituted so
     only whitelisted top-level packages can be imported.
+
+    `print` is wrapped to ALWAYS write to stderr: strategy print() is debug output and
+    must never touch stdout, which is reserved for the trial result JSON so the T3
+    consumer can json.loads(stdout) directly without a user being able to forge it.
     """
     import builtins as _b
+    import functools
 
     safe: dict[str, Any] = {}
     for name in _SAFE_BUILTIN_NAMES:
+        if name == "print":
+            continue  # provided below as a stderr-only wrapper
         if hasattr(_b, name):
             safe[name] = getattr(_b, name)
+
+    # print() → stderr always (keep stdout clean for the trial result JSON).
+    safe["print"] = functools.partial(print, file=sys.stderr)
 
     def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: A002
         # Only allow absolute imports of whitelisted top-level packages.
