@@ -794,3 +794,174 @@ def on_tick(ctx, params):
         code = "def on_tick(ctx, params):\n    ctx.__reduce__()\n"
         r = check_ast(code)
         assert r["ok"] is False, "AST should block __reduce__ access"
+
+
+# ===========================================================================
+# 13. Frame / traceback RCE regression tests (Critical fix)
+# ===========================================================================
+
+class TestFrameTracebackEscapes:
+    """Regression tests for the frame/traceback RCE escape chain.
+
+    The attack vector:
+        try: raise ValueError()
+        except ValueError as e:
+            e.__traceback__.tb_frame.f_back.f_builtins["__import__"]("os").system(...)
+
+    This works because:
+      1. e.__traceback__ gives the traceback object.
+      2. .tb_frame gives the frame where the exception was raised.
+      3. .f_back walks up the call stack.
+      4. .f_builtins gives the real __builtins__ dict of that frame.
+      5. ["__import__"] retrieves the unguarded built-in __import__.
+      6. ("os") imports os, .system("id") achieves RCE.
+
+    Fix: AST now blocks ALL dunder attributes (startswith "__") PLUS explicit
+    frame/traceback attribute names (tb_frame, f_back, f_builtins, etc.).
+    """
+
+    # ---- The exact reviewer RCE payload ------------------------------------
+
+    def test_reviewer_rce_payload_blocked(self):
+        """Exact payload from security review — must be blocked by check_ast."""
+        code = """
+def on_tick(ctx, params):
+    try:
+        raise ValueError()
+    except ValueError as e:
+        e.__traceback__.tb_frame.f_back.f_builtins["__import__"]("os").system("id")
+"""
+        r = check_ast(code)
+        assert r["ok"] is False, (
+            "CRITICAL: frame RCE payload must be blocked by AST check"
+        )
+        # Must catch at least the __traceback__ dunder or tb_frame/f_back/f_builtins
+        rules = {v["rule"] for v in r["violations"]}
+        assert "forbidden_attr" in rules
+
+    # ---- __traceback__ dunder is caught by all-dunder rule -----------------
+
+    def test_traceback_dunder_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = err.__traceback__\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+        assert any(v["rule"] == "forbidden_attr" for v in r["violations"])
+
+    # ---- frame attribute names caught by _FORBIDDEN_FRAME_ATTRS ------------
+
+    def test_tb_frame_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = tb.tb_frame\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+        assert any(v["rule"] == "forbidden_attr" for v in r["violations"])
+
+    def test_tb_next_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = tb.tb_next\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_f_back_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = frame.f_back\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+        assert any(v["rule"] == "forbidden_attr" for v in r["violations"])
+
+    def test_f_globals_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = frame.f_globals\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_f_builtins_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = frame.f_builtins\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_f_locals_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = frame.f_locals\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_f_code_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = frame.f_code\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_gi_frame_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = gen.gi_frame\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_cr_frame_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = coro.cr_frame\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_ag_frame_attr_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = agen.ag_frame\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    # ---- All-dunder rule catches previously-unlisted dunders ---------------
+
+    def test_getattribute_dunder_blocked(self):
+        """__getattribute__ can bypass attribute-level restrictions."""
+        code = "def on_tick(ctx, params):\n    x = ctx.__getattribute__('secret')\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+        assert any(v["rule"] == "forbidden_attr" for v in r["violations"])
+
+    def test_getattr_dunder_blocked(self):
+        """__getattr__ hook access blocked."""
+        code = "def on_tick(ctx, params):\n    x = ctx.__getattr__\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_new_dunder_blocked(self):
+        """__new__ used for instance creation bypass."""
+        code = "def on_tick(ctx, params):\n    x = object.__new__(object)\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_init_dunder_blocked(self):
+        code = "def on_tick(ctx, params):\n    x = ctx.__init__()\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    def test_arbitrary_unknown_dunder_blocked(self):
+        """Any future/unknown dunder must also be blocked."""
+        code = "def on_tick(ctx, params):\n    x = ctx.__future_escape_vector__\n"
+        r = check_ast(code)
+        assert r["ok"] is False
+
+    # ---- Multi-step chain is caught at first dunder ------------------------
+
+    def test_full_rce_chain_blocked_at_traceback_step(self):
+        """The chain e.__traceback__.tb_frame.f_back.f_builtins is blocked."""
+        code = """
+def on_tick(ctx, params):
+    try:
+        1/0
+    except ZeroDivisionError as e:
+        tb = e.__traceback__
+        frame = tb.tb_frame
+        builtins_dict = frame.f_builtins
+        import_fn = builtins_dict["__import__"]
+        import_fn("os").system("id")
+"""
+        r = check_ast(code)
+        assert r["ok"] is False
+        # Multiple violations: __traceback__ (dunder), tb_frame, f_builtins, __import__ key
+        assert len(r["violations"]) >= 1
+
+    def test_alternate_traceback_access_via_sys_exc_info_blocked(self):
+        """import sys → blocked at import level (sys not in whitelist)."""
+        code = """
+import sys
+def on_tick(ctx, params):
+    exc_type, exc_val, tb = sys.exc_info()
+    tb.tb_frame.f_builtins["__import__"]("os")
+"""
+        r = check_ast(code)
+        assert r["ok"] is False
+        assert any(v["rule"] == "forbidden_import" for v in r["violations"])
+

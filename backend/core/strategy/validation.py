@@ -1,13 +1,27 @@
 """Static validation for user-uploaded Python strategy code.
 
+⚠️  POSITIONING WARNING ⚠️
+This module is an INPUT-CLEANING / EARLY-ERROR layer, NOT a security boundary.
+The real security boundary is container isolation (cap_drop / read_only filesystem /
+network isolation / non-root user / pids_limit) implemented in T7.
+
+Do NOT rely on this module alone to prevent malicious code execution.
+Do NOT use exec_strategy() in a web/worker main process as the sole protection
+against untrusted code.  This layer exists to:
+  1. Catch obvious mistakes and give friendly error messages to honest users.
+  2. Reduce noise by blocking clearly malicious submissions early.
+  3. Serve as defence-in-depth alongside (not instead of) container isolation.
+
 Two layers of static checking, performed before controlled exec (safe_exec):
 
 1. check_syntax: fast compile() pass — catches SyntaxErrors early.
 2. check_ast:   AST walk — enforces security policy:
      - Import whitelist (only ALLOWED_MODULES).
      - Dangerous built-in call blacklist.
-     - Dangerous dunder attribute access blacklist (sandbox-escape via
-       __class__/__bases__/__subclasses__/etc.).
+     - ALL dunder attribute access (node.attr.startswith("__")) is blocked —
+       this is broader than a per-name blacklist and catches frame/traceback
+       escape chains like e.__traceback__.tb_frame.f_back.f_builtins["__import__"].
+     - frame/traceback/generator internal attribute names (tb_frame, f_back, etc.).
      - Dangerous name references (eval / exec / __import__ / open referenced
        directly, even without calling).
      - Mandatory on_tick(ctx, params) top-level function definition.
@@ -18,7 +32,6 @@ any request context and in unit tests without a database.
 from __future__ import annotations
 
 import ast
-import sys
 from typing import TypedDict
 
 
@@ -113,27 +126,43 @@ _FORBIDDEN_CALLS: frozenset[str] = frozenset({
     "breakpoint",
 })
 
-#: Attribute names (accessed via dot notation) that are forbidden — these are
-#: the classic vectors for CPython sandbox escapes.
-_FORBIDDEN_ATTRS: frozenset[str] = frozenset({
-    "__subclasses__",
-    "__globals__",
-    "__class__",
-    "__bases__",
-    "__mro__",
-    "__dict__",
-    "__builtins__",
-    "__import__",
-    "__code__",
-    "__closure__",
-    "__func__",
-    "__self__",
-    "__wrapped__",
-    "__loader__",
-    "__spec__",
-    "__init_subclass__",
-    "__reduce__",
-    "__reduce_ex__",
+#: Attribute names (accessed via dot notation) that are forbidden.
+#:
+#: STRATEGY: we block ALL dunder attributes (names starting with "__") rather
+#: than maintaining an exhaustive per-name blacklist.  CPython has too many
+#: dunder-based escape vectors to enumerate reliably.  Legitimate trading
+#: strategy code (ctx.candles / ctx.buy / ctx.sell / ctx.log) never needs to
+#: access any __xxx__ attribute on any object.
+#:
+#: Additionally we block frame/traceback/generator internal attribute names
+#: that are NOT dunders but enable the classic traceback-frame RCE chain:
+#:   try: raise ValueError()
+#:   except ValueError as e:
+#:       e.__traceback__.tb_frame.f_back.f_builtins["__import__"]("os").system(…)
+#: The __traceback__ access is caught by the all-dunder rule; tb_frame / f_back /
+#: f_builtins are caught by this explicit set.
+_FORBIDDEN_FRAME_ATTRS: frozenset[str] = frozenset({
+    # traceback object internals
+    "tb_frame",
+    "tb_next",
+    "tb_lineno",
+    "tb_lasti",
+    # frame object internals
+    "f_back",
+    "f_globals",
+    "f_builtins",
+    "f_locals",
+    "f_code",
+    "f_lineno",
+    "f_lasti",
+    "f_trace",
+    # generator/coroutine/async-generator internals
+    "gi_frame",
+    "gi_code",
+    "cr_frame",
+    "cr_code",
+    "ag_frame",
+    "ag_code",
 })
 
 
@@ -210,12 +239,23 @@ class _SecurityVisitor(ast.NodeVisitor):
 
     def visit_Attribute(self, node: ast.Attribute) -> None:  # noqa: N802
         attr = node.attr
-        if attr in _FORBIDDEN_ATTRS:
+        # Block ALL dunder attributes — any name starting with "__".
+        # Legitimate strategy code never needs __xxx__ on any object.
+        if attr.startswith("__"):
             self._add(
                 node,
                 rule="forbidden_attr",
-                detail=f"Access to attribute '{attr}' is forbidden "
-                       "(potential sandbox escape).",
+                detail=f"Access to dunder attribute '{attr}' is forbidden "
+                       "(all dunder attributes are blocked to prevent sandbox escapes).",
+            )
+        # Also block frame/traceback/generator internals that are not dunders
+        # but enable the traceback-frame RCE escape chain.
+        elif attr in _FORBIDDEN_FRAME_ATTRS:
+            self._add(
+                node,
+                rule="forbidden_attr",
+                detail=f"Access to frame/traceback attribute '{attr}' is forbidden "
+                       "(potential sandbox escape via traceback frame chain).",
             )
         self.generic_visit(node)
 
@@ -256,7 +296,8 @@ def check_ast(code: str) -> ASTResult:
     Checks:
     - Import/ImportFrom: top-level module must be in ALLOWED_MODULES.
     - Call: function name must not be in _FORBIDDEN_CALLS.
-    - Attribute: attribute name must not be in _FORBIDDEN_ATTRS.
+    - Attribute: ALL dunder names (attr.startswith("__")) are blocked;
+      additionally frame/traceback/generator internals in _FORBIDDEN_FRAME_ATTRS.
     - Name: identifier must not be in _DANGEROUS_NAMES.
     - Top-level ``on_tick(ctx, params)`` function must be present with exactly
       2 positional parameters.

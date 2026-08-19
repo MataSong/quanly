@@ -1,6 +1,16 @@
 """Safe exec for user-uploaded Python strategy code.
 
-Security model:
+⚠️  POSITIONING WARNING ⚠️
+This module is an INPUT-CLEANING / EARLY-ERROR layer, NOT a security boundary.
+The real security boundary is container isolation (cap_drop / read_only filesystem /
+network isolation / non-root user / pids_limit) implemented in T7.
+
+Do NOT rely on this module alone to prevent malicious code execution.
+Do NOT use exec_strategy() in a web/worker main process as the sole protection
+against untrusted code.  exec_strategy() should only be called from inside an
+already-isolated container environment.
+
+Security model (defence-in-depth, not sole protection):
   - __builtins__ is replaced with a strict whitelist of pure-compute builtins.
   - __import__ is replaced with a controlled wrapper that only allows
     importing modules from ALLOWED_MODULES whitelist.
