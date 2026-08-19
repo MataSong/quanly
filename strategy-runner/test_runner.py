@@ -79,7 +79,7 @@ class TestRunnerCtx(unittest.TestCase):
             result = self.ctx.candles(bar="1m", limit=50)
 
         mock_get.assert_called_once_with(
-            "http://backend:8000/api/strategy/runner/candles",
+            "http://backend:8000/api/strategy/runner/v1/candles",
             params={"bar": "1m", "limit": 50},
             timeout=15,
         )
@@ -103,7 +103,7 @@ class TestRunnerCtx(unittest.TestCase):
             ord_id = self.ctx.buy("0.001")
 
         mock_post.assert_called_once_with(
-            "http://backend:8000/api/strategy/runner/order",
+            "http://backend:8000/api/strategy/runner/v1/order",
             json={"side": "buy", "sz": "0.001", "ord_type": "market"},
             timeout=15,
         )
@@ -242,6 +242,220 @@ class TestDualMaIntegration(unittest.TestCase):
         on_tick(ctx, {"fast_period": 5, "slow_period": 20, "sz": "0.001"})
         ctx.buy.assert_not_called()
         ctx.sell.assert_not_called()
+
+
+class TestControlledExec(unittest.TestCase):
+    """UC-T6: controlled-exec of user code (noise-reduction layer, not a boundary)."""
+
+    def test_extracts_valid_on_tick(self):
+        runner = _load_runner()
+        code = (
+            "def on_tick(ctx, params):\n"
+            "    ctx.log('info', 'hi')\n"
+        )
+        fn = runner.load_on_tick("", code)
+        self.assertTrue(callable(fn))
+
+    def test_user_code_can_import_whitelisted(self):
+        runner = _load_runner()
+        code = (
+            "import math\n"
+            "import statistics\n"
+            "def on_tick(ctx, params):\n"
+            "    return math.sqrt(4) + statistics.mean([1, 2, 3])\n"
+        )
+        fn = runner.load_on_tick("", code)
+        self.assertTrue(callable(fn))
+
+    def test_import_os_is_blocked(self):
+        runner = _load_runner()
+        code = (
+            "import os\n"
+            "def on_tick(ctx, params):\n"
+            "    return os.getcwd()\n"
+        )
+        with self.assertRaises(ImportError):
+            runner.load_on_tick("", code)
+
+    def test_import_sys_is_blocked(self):
+        runner = _load_runner()
+        code = "import sys\ndef on_tick(ctx, params):\n    pass\n"
+        with self.assertRaises(ImportError):
+            runner.load_on_tick("", code)
+
+    def test_open_is_not_available(self):
+        runner = _load_runner()
+        # open() must NOT be in the restricted builtins → NameError at exec/run.
+        code = (
+            "def on_tick(ctx, params):\n"
+            "    return open('/etc/passwd')\n"
+        )
+        fn = runner.load_on_tick("", code)  # defining is fine
+        with self.assertRaises(NameError):
+            fn(None, {})
+
+    def test_eval_is_not_available(self):
+        runner = _load_runner()
+        code = "x = eval('1+1')\ndef on_tick(ctx, params):\n    pass\n"
+        with self.assertRaises(NameError):
+            runner.load_on_tick("", code)
+
+    def test_missing_on_tick_raises(self):
+        runner = _load_runner()
+        code = "def something_else(ctx, params):\n    pass\n"
+        with self.assertRaises(RuntimeError):
+            runner.load_on_tick("", code)
+
+    def test_non_callable_on_tick_raises(self):
+        runner = _load_runner()
+        code = "on_tick = 42\n"
+        with self.assertRaises(RuntimeError):
+            runner.load_on_tick("", code)
+
+    def test_syntax_error_raises(self):
+        runner = _load_runner()
+        code = "def on_tick(ctx, params)\n    pass\n"  # missing colon
+        with self.assertRaises(SyntaxError):
+            runner.load_on_tick("", code)
+
+    def test_user_code_takes_precedence_over_code_ref(self):
+        runner = _load_runner()
+        code = "def on_tick(ctx, params):\n    ctx.log('info', 'user')\n"
+        fn = runner.load_on_tick("dual_ma", code)  # user_code wins
+        self.assertTrue(callable(fn))
+        self.assertEqual(fn.__name__, "on_tick")
+
+
+TRIAL_ENV = {
+    "TRIAL_MODE": "1",
+    "PARAMS": "{}",
+    "CODE_REF": "",
+}
+
+
+def _run_trial_subprocess(env_overrides: dict) -> dict:
+    """Run runner.py in TRIAL_MODE as a subprocess; return parsed stdout JSON.
+
+    Fully offline (no requests needed). Logs go to stderr, JSON result to stdout.
+    """
+    import os
+    import subprocess
+
+    env = dict(os.environ)
+    env.update(TRIAL_ENV)
+    env.update(env_overrides)
+    here = os.path.dirname(os.path.abspath(__file__))
+    proc = subprocess.run(
+        [sys.executable, os.path.join(here, "runner.py")],
+        env=env,
+        capture_output=True,
+        text=True,
+        cwd=here,
+        timeout=60,
+    )
+    # Result is the (single) JSON line on stdout.
+    line = proc.stdout.strip().splitlines()[-1]
+    return json.loads(line)
+
+
+def _synthetic_candles(closes: list[float]) -> str:
+    data = [{"ts": i, "o": c, "h": c, "l": c, "c": c, "vol": 1, "volCcy": 1}
+            for i, c in enumerate(closes)]
+    return json.dumps(data)
+
+
+class TestTrialMode(unittest.TestCase):
+    """UC-T6: one-shot offline trial mode. Runs runner.py as a subprocess."""
+
+    def test_trial_counts_signals(self):
+        # dual_ma golden cross: 21 flat bars, spike on last → one buy signal.
+        closes = [100.0] * 21
+        closes[-1] = 200.0
+        code = (
+            "def on_tick(ctx, params):\n"
+            "    cs = ctx.candles()\n"
+            "    closes = [float(c['c']) for c in cs]\n"
+            "    if len(closes) < 21:\n"
+            "        return\n"
+            "    fast = sum(closes[-5:]) / 5\n"
+            "    slow = sum(closes[-20:]) / 20\n"
+            "    if fast > slow:\n"
+            "        ctx.buy('0.001')\n"
+        )
+        result = _run_trial_subprocess({
+            "USER_CODE": code,
+            "TRIAL_CANDLES": _synthetic_candles(closes),
+        })
+        self.assertTrue(result["ok"], result)
+        self.assertGreaterEqual(result["signal_count"], 1)
+
+    def test_trial_no_signal(self):
+        closes = [100.0] * 25  # flat, no cross
+        code = (
+            "def on_tick(ctx, params):\n"
+            "    cs = ctx.candles()\n"
+            "    closes = [float(c['c']) for c in cs]\n"
+            "    if len(closes) < 21:\n"
+            "        return\n"
+            "    fast = sum(closes[-5:]) / 5\n"
+            "    slow = sum(closes[-20:]) / 20\n"
+            "    if fast > slow:\n"
+            "        ctx.buy('0.001')\n"
+        )
+        result = _run_trial_subprocess({
+            "USER_CODE": code,
+            "TRIAL_CANDLES": _synthetic_candles(closes),
+        })
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["signal_count"], 0)
+
+    def test_trial_on_tick_exception_reports_tick(self):
+        code = (
+            "def on_tick(ctx, params):\n"
+            "    raise ValueError('boom')\n"
+        )
+        result = _run_trial_subprocess({
+            "USER_CODE": code,
+            "TRIAL_CANDLES": _synthetic_candles([1.0, 2.0, 3.0]),
+        })
+        self.assertFalse(result["ok"], result)
+        self.assertIn("boom", result["error"])
+        self.assertEqual(result["tick"], 1)
+
+    def test_trial_import_blocked_reports_load_failure(self):
+        code = (
+            "import os\n"
+            "def on_tick(ctx, params):\n"
+            "    pass\n"
+        )
+        result = _run_trial_subprocess({
+            "USER_CODE": code,
+            "TRIAL_CANDLES": _synthetic_candles([1.0, 2.0]),
+        })
+        self.assertFalse(result["ok"], result)
+        self.assertIn("os", result["error"])
+
+    def test_trial_builtin_dual_ma(self):
+        # No USER_CODE → uses CODE_REF built-in.
+        closes = [100.0] * 21
+        closes[-1] = 200.0
+        result = _run_trial_subprocess({
+            "CODE_REF": "dual_ma",
+            "TRIAL_CANDLES": _synthetic_candles(closes),
+            "PARAMS": json.dumps({"fast_period": 5, "slow_period": 20, "sz": "0.001"}),
+        })
+        self.assertTrue(result["ok"], result)
+        self.assertGreaterEqual(result["signal_count"], 1)
+
+    def test_trial_no_network_no_token_required(self):
+        # No RUN_TOKEN / BACKEND_URL provided at all — trial must still work.
+        code = "def on_tick(ctx, params):\n    ctx.buy('0.001')\n"
+        result = _run_trial_subprocess({
+            "USER_CODE": code,
+            "TRIAL_CANDLES": _synthetic_candles([1.0, 2.0, 3.0, 4.0]),
+        })
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["signal_count"], 4)
 
 
 if __name__ == "__main__":

@@ -5,9 +5,12 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /app
 
-# Only runtime dependency: requests for HTTP callbacks to backend
-# dual_ma.py is pure Python — no numpy/pandas needed
-RUN pip install --no-cache-dir requests==2.32.3
+# requests: HTTP callbacks to backend (live/poll mode).
+# numpy + pandas: commonly used by user quant strategies (controlled-exec import
+# whitelist allows them). PyPI official source — NOT the Tsinghua mirror, which is
+# unreliable in some build environments (project lesson learned).
+RUN pip install --no-cache-dir requests==2.32.3 \
+    && pip install --no-cache-dir numpy pandas
 
 # Copy runner and built-in strategy code
 COPY runner.py .
