@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir requests==2.32.3 \
 COPY runner.py .
 COPY builtin/__init__.py builtin/__init__.py
 COPY builtin/dual_ma.py builtin/dual_ma.py
+COPY builtin/rsi.py builtin/rsi.py
+COPY builtin/macd.py builtin/macd.py
 
 # Read-only rootfs (tmpfs /tmp is mounted by the host docker run command)
 # Switch to non-root

@@ -20,6 +20,8 @@ logger = logging.getLogger("quanly.backtest")
 # Registry of supported builtin strategy code_refs.
 _BUILTIN_MAP: dict[str, str] = {
     "dual_ma": "core.strategy.builtin.dual_ma",
+    "rsi": "core.strategy.builtin.rsi",
+    "macd": "core.strategy.builtin.macd",
 }
 
 

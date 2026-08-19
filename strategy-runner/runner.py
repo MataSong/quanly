@@ -13,7 +13,7 @@ Two run modes:
 Strategy source:
   - USER_CODE env (non-empty): user-supplied Python source, on_tick extracted via a
     *controlled* exec (restricted __builtins__ + import whitelist). See load_on_tick.
-  - Otherwise CODE_REF selects a built-in strategy (currently dual_ma).
+  - Otherwise CODE_REF selects a built-in strategy (dual_ma, rsi, macd).
 
 SECURITY NOTE — the controlled exec here is a NOISE-REDUCTION layer, NOT a security
 boundary. The real isolation is the container the backend launches this in
@@ -191,20 +191,33 @@ def _load_on_tick_from_user_code(code: str):
 # Strategy loader
 # ---------------------------------------------------------------------------
 
+# Built-in strategy code_refs the runner is allowed to import from builtin.<ref>.
+# Keep in sync with backend/core/backtest/engine.py::_BUILTIN_MAP.
+_BUILTIN_CODE_REFS = frozenset({"dual_ma", "rsi", "macd"})
+
+
 def load_on_tick(code_ref: str, user_code: str = ""):
     """Load the on_tick function.
 
     If user_code is non-empty → controlled-exec it (noise-reduction layer; real
-    boundary is the container). Otherwise select a built-in by code_ref.
+    boundary is the container). Otherwise select a built-in by code_ref via a
+    whitelisted dynamic import (builtin.<code_ref>).
 
     Raises ValueError / ImportError / AttributeError / SyntaxError / RuntimeError.
     """
     if user_code:
         return _load_on_tick_from_user_code(user_code)
-    if code_ref == "dual_ma":
-        from builtin.dual_ma import on_tick
+    if code_ref in _BUILTIN_CODE_REFS:
+        import importlib
+
+        module = importlib.import_module(f"builtin.{code_ref}")
+        on_tick = getattr(module, "on_tick", None)
+        if not callable(on_tick):
+            raise AttributeError(f"builtin.{code_ref} has no callable on_tick")
         return on_tick
-    raise ValueError(f"Unknown CODE_REF: {code_ref!r}. Supported: dual_ma")
+    raise ValueError(
+        f"Unknown CODE_REF: {code_ref!r}. Supported: {sorted(_BUILTIN_CODE_REFS)}"
+    )
 
 
 # ---------------------------------------------------------------------------
