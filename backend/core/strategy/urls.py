@@ -9,6 +9,7 @@ from core.strategy.views import (
     RunnerLogView,
     RunnerOrderView,
     StrategyCreateView,
+    StrategyCheckView,
     StrategyDetailView,
     StrategyListView,
     StrategyRunDetailView,
@@ -28,6 +29,7 @@ urlpatterns = [
     # Strategy CRUD — POST uses StrategyCreateView; GET/PUT/DELETE on detail use StrategyDetailView
     path("strategies/create", StrategyCreateView.as_view(), name="strategy-create"),
     path("strategies/<int:pk>", StrategyDetailView.as_view(), name="strategy-detail"),
+    path("strategies/<int:pk>/check", StrategyCheckView.as_view(), name="strategy-check"),
     path("strategies/<int:pk>/submit", StrategySubmitView.as_view(), name="strategy-submit"),
 
     # Admin review

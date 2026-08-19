@@ -662,3 +662,258 @@ def test_run_uses_strategy_params(api_client):
     assert run.params == {"fast_period": 7, "slow_period": 21, "sz": "0.05"}
     # tasks 会用 template_ref 作 CODE_REF 跑内置代码
     assert run.strategy.template_ref == "dual_ma"
+
+
+# ---------------------------------------------------------------------------
+# UC-T4: code 类型 create / check / submit + code 脱敏
+# ---------------------------------------------------------------------------
+
+_PASSED = {"check_status": Strategy.CHECK_PASSED, "check_report": {"stage": "trial", "ok": True, "signal_count": 3}}
+_FAILED = {"check_status": Strategy.CHECK_FAILED, "check_report": {"stage": "ast", "violations": [{"line": 1, "rule": "forbidden_import", "detail": "import os ..."}]}}
+
+_VALIDATE = "core.strategy.validation.validate_strategy_code"
+
+_SAMPLE_CODE = "def on_tick(ctx, params):\n    pass\n"
+
+
+def _make_code_strategy(
+    owner: User,
+    name: str = "Code Strat",
+    code: str = _SAMPLE_CODE,
+    check_status: str = Strategy.CHECK_PASSED,
+    check_report: dict | None = None,
+    visibility: str = Strategy.VISIBILITY_PRIVATE,
+    status: str = Strategy.STATUS_DRAFT,
+) -> Strategy:
+    return Strategy.objects.create(
+        owner=owner,
+        name=name,
+        source_type=Strategy.SOURCE_CODE,
+        is_builtin=False,
+        code=code,
+        code_ref="",
+        template_ref="",
+        params={},
+        default_params={},
+        visibility=visibility,
+        status=status,
+        check_status=check_status,
+        check_report=check_report or {"stage": "trial", "ok": True},
+    )
+
+
+@pytest.mark.django_db
+def test_create_code_strategy_passed(api_client):
+    """POST create source_type=code, validate→passed → 201 + check_status=passed."""
+    user = _make_user("code_c1", ["strategy:create"])
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_PASSED) as m:
+        resp = api_client.post("/api/strategy/strategies/create", {
+            "name": "My Code Strat",
+            "source_type": "code",
+            "code": _SAMPLE_CODE,
+        }, format="json")
+    assert resp.status_code == 201
+    m.assert_called_once()
+    data = resp.data
+    assert data["source_type"] == Strategy.SOURCE_CODE
+    assert data["status"] == Strategy.STATUS_DRAFT
+    assert data["check_status"] == Strategy.CHECK_PASSED
+    assert data["is_owner"] is True
+    # owner's own code is visible
+    assert data["code"] == _SAMPLE_CODE
+
+
+@pytest.mark.django_db
+def test_create_code_strategy_failed(api_client):
+    """POST create source_type=code, validate→failed → still 201 + check_status=failed."""
+    user = _make_user("code_c2", ["strategy:create"])
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_FAILED):
+        resp = api_client.post("/api/strategy/strategies/create", {
+            "name": "Bad Code Strat",
+            "source_type": "code",
+            "code": "import os\ndef on_tick(ctx, params):\n    pass\n",
+        }, format="json")
+    assert resp.status_code == 201
+    assert resp.data["check_status"] == Strategy.CHECK_FAILED
+    assert resp.data["check_report"]["stage"] == "ast"
+
+
+@pytest.mark.django_db
+def test_create_code_strategy_missing_code_400(api_client):
+    """POST create source_type=code without code → 400 (validate not called)."""
+    user = _make_user("code_c3", ["strategy:create"])
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_PASSED) as m:
+        resp = api_client.post("/api/strategy/strategies/create", {
+            "name": "No Code",
+            "source_type": "code",
+        }, format="json")
+    assert resp.status_code == 400
+    m.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_create_code_forces_owner_and_status(api_client):
+    """create code: 不信前端传的 owner/status,强制 owner=self + draft."""
+    _builtin_strategy()
+    other = _make_user("code_other")
+    user = _make_user("code_c4", ["strategy:create"])
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_PASSED):
+        resp = api_client.post("/api/strategy/strategies/create", {
+            "name": "Sneaky",
+            "source_type": "code",
+            "code": _SAMPLE_CODE,
+            "owner": other.pk,
+            "status": Strategy.STATUS_APPROVED,
+        }, format="json")
+    assert resp.status_code == 201
+    strat = Strategy.objects.get(pk=resp.data["id"])
+    assert strat.owner_id == user.id
+    assert strat.status == Strategy.STATUS_DRAFT
+
+
+@pytest.mark.django_db
+def test_create_template_unaffected(api_client):
+    """create 默认(无 source_type)仍走 template 逻辑,不受 code 影响。"""
+    _builtin_strategy()
+    user = _make_user("code_c5", ["strategy:create"])
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_PASSED) as m:
+        resp = api_client.post("/api/strategy/strategies/create", {
+            "name": "Template Strat",
+            "template_ref": "dual_ma",
+            "params": {"fast_period": 3},
+        }, format="json")
+    assert resp.status_code == 201
+    assert resp.data["source_type"] == Strategy.SOURCE_UPLOADED
+    m.assert_not_called()  # template create never runs validation
+
+
+@pytest.mark.django_db
+def test_check_endpoint_reruns_validation(api_client):
+    """POST /strategies/<pk>/check reruns validate + updates check_status."""
+    user = _make_user("code_chk1", ["strategy:update"])
+    strat = _make_code_strategy(user, check_status=Strategy.CHECK_FAILED,
+                                check_report={"stage": "ast"})
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_PASSED) as m:
+        resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/check")
+    assert resp.status_code == 200
+    m.assert_called_once()
+    assert resp.data["check_status"] == Strategy.CHECK_PASSED
+    strat.refresh_from_db()
+    assert strat.check_status == Strategy.CHECK_PASSED
+
+
+@pytest.mark.django_db
+def test_check_endpoint_template_400(api_client):
+    """check on template strategy (no code) → 400."""
+    _builtin_strategy()
+    user = _make_user("code_chk2", ["strategy:update"])
+    strat = _make_user_strategy(user, name="Tmpl")
+    api_client.force_authenticate(user)
+    resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/check")
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_check_endpoint_other_owner_404(api_client):
+    """check on another user's strategy → 404."""
+    owner = _make_user("code_chk_owner")
+    attacker = _make_user("code_chk_atk", ["strategy:update"])
+    strat = _make_code_strategy(owner)
+    api_client.force_authenticate(attacker)
+    resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/check")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_submit_code_requires_check_passed(api_client):
+    """submit code strategy with check_status=failed → 400."""
+    user = _make_user("code_sub1", ["strategy:update"])
+    strat = _make_code_strategy(user, check_status=Strategy.CHECK_FAILED)
+    api_client.force_authenticate(user)
+    resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/submit")
+    assert resp.status_code == 400
+    assert "检测未通过" in resp.data["detail"]
+    strat.refresh_from_db()
+    assert strat.status == Strategy.STATUS_DRAFT
+
+
+@pytest.mark.django_db
+def test_submit_code_passed_goes_pending(api_client):
+    """submit code strategy with check_status=passed → pending + public."""
+    user = _make_user("code_sub2", ["strategy:update"])
+    strat = _make_code_strategy(user, check_status=Strategy.CHECK_PASSED)
+    api_client.force_authenticate(user)
+    resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/submit")
+    assert resp.status_code == 200
+    assert resp.data["status"] == Strategy.STATUS_PENDING
+    assert resp.data["visibility"] == Strategy.VISIBILITY_PUBLIC
+
+
+@pytest.mark.django_db
+def test_submit_template_not_blocked_by_check(api_client):
+    """template strategy submit not affected by check_status guard."""
+    _builtin_strategy()
+    user = _make_user("code_sub3", ["strategy:update"])
+    strat = _make_user_strategy(user, name="Tmpl Submit")
+    api_client.force_authenticate(user)
+    resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/submit")
+    assert resp.status_code == 200
+    assert resp.data["status"] == Strategy.STATUS_PENDING
+
+
+@pytest.mark.django_db
+def test_code_masked_for_other_private():
+    """Serializer: other user's private code strategy → code='' + report stage-only."""
+    from core.strategy.views import StrategySerializer
+    from django.test import RequestFactory
+    from rest_framework.request import Request as DRFRequest
+
+    owner = _make_user("code_mask_owner")
+    viewer = _make_user("code_mask_viewer")
+    strat = _make_code_strategy(
+        owner, code=_SAMPLE_CODE,
+        visibility=Strategy.VISIBILITY_PRIVATE, status=Strategy.STATUS_DRAFT,
+        check_report={"stage": "ast", "violations": [{"detail": "secret code"}]},
+    )
+    factory = RequestFactory()
+    raw = factory.get("/")
+    drf_req = DRFRequest(raw)
+    drf_req.user = viewer
+    data = StrategySerializer(strat, context={"request": drf_req}).data
+    assert data["code"] == ""
+    # check_report masked to stage-only, no violations leaked
+    assert data["check_report"] == {"stage": "ast"}
+    assert "violations" not in data["check_report"]
+
+
+@pytest.mark.django_db
+def test_code_visible_for_owner_and_public_approved():
+    """Serializer: owner sees own code; other sees public+approved code."""
+    from core.strategy.views import StrategySerializer
+    from django.test import RequestFactory
+    from rest_framework.request import Request as DRFRequest
+
+    owner = _make_user("code_vis_owner")
+    viewer = _make_user("code_vis_viewer")
+    factory = RequestFactory()
+
+    # owner sees own private code
+    own = _make_code_strategy(owner, code=_SAMPLE_CODE, visibility=Strategy.VISIBILITY_PRIVATE)
+    raw = factory.get("/"); req_own = DRFRequest(raw); req_own.user = owner
+    d_own = StrategySerializer(own, context={"request": req_own}).data
+    assert d_own["code"] == _SAMPLE_CODE
+
+    # other sees public+approved code
+    pub = _make_code_strategy(
+        owner, name="Pub Code", code=_SAMPLE_CODE,
+        visibility=Strategy.VISIBILITY_PUBLIC, status=Strategy.STATUS_APPROVED,
+    )
+    raw2 = factory.get("/"); req_pub = DRFRequest(raw2); req_pub.user = viewer
+    d_pub = StrategySerializer(pub, context={"request": req_pub}).data
+    assert d_pub["code"] == _SAMPLE_CODE

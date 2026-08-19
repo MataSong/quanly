@@ -42,6 +42,8 @@ class StrategySerializer(drf_serializers.ModelSerializer):
     owner_username = drf_serializers.SerializerMethodField()
     is_owner = drf_serializers.SerializerMethodField()
     params = drf_serializers.SerializerMethodField()
+    code = drf_serializers.SerializerMethodField()
+    check_report = drf_serializers.SerializerMethodField()
 
     class Meta:
         model = Strategy
@@ -51,6 +53,8 @@ class StrategySerializer(drf_serializers.ModelSerializer):
             # marketplace fields
             "owner_username", "template_ref", "params", "visibility", "status",
             "description", "reject_reason", "is_owner",
+            # user-code fields (source_type=code)
+            "code", "check_status", "check_report",
         ]
 
     def _request(self):
@@ -65,6 +69,26 @@ class StrategySerializer(drf_serializers.ModelSerializer):
             return False
         return obj.owner_id == req.user.id
 
+    def _is_visible_to_requester(self, obj) -> bool:
+        """True if the requester may see the strategy's sensitive payload
+        (params / code / full check_report).
+
+        Rules (与 get_params 一致):
+          - 内置策略 (owner=None): 可见
+          - 自己的策略: 可见
+          - 他人 public+approved: 可见 (开放平台鼓励学习)
+          - 他人私有/pending/rejected: 不可见 (脱敏)
+        """
+        req = self._request()
+        if obj.owner_id is None:
+            return True
+        if req is not None and obj.owner_id == req.user.id:
+            return True
+        return (
+            obj.visibility == Strategy.VISIBILITY_PUBLIC
+            and obj.status == Strategy.STATUS_APPROVED
+        )
+
     def get_params(self, obj) -> dict:
         req = self._request()
         # 内置策略: return params (内置用 default_params, 用户实例用 params)
@@ -77,6 +101,31 @@ class StrategySerializer(drf_serializers.ModelSerializer):
         if obj.visibility == Strategy.VISIBILITY_PUBLIC and obj.status == Strategy.STATUS_APPROVED:
             return obj.params
         # 他人私有/pending/rejected: 脱敏
+        return {}
+
+    def get_code(self, obj) -> str:
+        """code 脱敏 (仿 get_params):
+          - 内置 (owner=None): 无 code → ""
+          - 自己的: 返回 code
+          - 他人 public+approved: 返回 code (开放平台鼓励学习)
+          - 他人私有/pending/rejected: 脱敏 → ""
+        """
+        if obj.owner_id is None:
+            return ""
+        if self._is_visible_to_requester(obj):
+            return obj.code or ""
+        return ""
+
+    def get_check_report(self, obj) -> dict:
+        """check_report 可能内含用户代码片段 (syntax msg / ast violations / trial error),
+        对不可见者只返 stage,不暴露正文。
+        """
+        report = obj.check_report or {}
+        if self._is_visible_to_requester(obj):
+            return report
+        # 他人私有/pending/rejected: 只保留 stage 摘要,不泄露代码内容
+        if isinstance(report, dict) and "stage" in report:
+            return {"stage": report.get("stage")}
         return {}
 
 
@@ -180,13 +229,56 @@ class StrategyCreateView(APIView):
 
     def post(self, request):
         name = (request.data.get("name") or "").strip()
-        template_ref = (request.data.get("template_ref") or "").strip()
-        params = request.data.get("params") or {}
         description = (request.data.get("description") or "").strip()
         visibility = request.data.get("visibility", Strategy.VISIBILITY_PRIVATE)
+        # source_type: 前端可传 "code";其余(含默认/uploaded)走 template 逻辑。
+        source_type = (request.data.get("source_type") or Strategy.SOURCE_UPLOADED).strip()
 
         if not name:
             return Response({"detail": "name is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if visibility not in (Strategy.VISIBILITY_PRIVATE, Strategy.VISIBILITY_PUBLIC):
+            visibility = Strategy.VISIBILITY_PRIVATE
+
+        # ── code 类型:用户自写 Python 脚本 ──────────────────────────────────────
+        if source_type == Strategy.SOURCE_CODE:
+            code = request.data.get("code") or ""
+            if not code.strip():
+                return Response(
+                    {"detail": "code is required for code-type strategies."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            strategy = Strategy.objects.create(
+                owner=request.user,               # 强制 owner=self,不信前端
+                name=name,
+                source_type=Strategy.SOURCE_CODE,
+                is_builtin=False,
+                code=code,
+                code_ref="",
+                template_ref="",
+                params={},
+                default_params={},
+                description=description,
+                visibility=visibility,
+                status=Strategy.STATUS_DRAFT,     # 强制 draft,不信前端
+            )
+
+            # 同步三层检测(试运行会起隔离容器;docker 不可用时降级 failed,
+            # 都写进 check_report,不阻断创建)。
+            from core.strategy.validation import validate_strategy_code
+
+            result = validate_strategy_code(code)
+            strategy.check_status = result.get("check_status", Strategy.CHECK_FAILED)
+            strategy.check_report = result.get("check_report", {})
+            strategy.save(update_fields=["check_status", "check_report", "updated_at"])
+
+            return Response(_serialize(strategy, request), status=status.HTTP_201_CREATED)
+
+        # ── template 类型(uploaded):点击式内置模板 + 参数 ────────────────────────
+        template_ref = (request.data.get("template_ref") or "").strip()
+        params = request.data.get("params") or {}
+
         if not template_ref:
             return Response({"detail": "template_ref is required."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -196,9 +288,6 @@ class StrategyCreateView(APIView):
                 {"detail": f"Invalid template_ref '{template_ref}': no builtin strategy found."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        if visibility not in (Strategy.VISIBILITY_PRIVATE, Strategy.VISIBILITY_PUBLIC):
-            visibility = Strategy.VISIBILITY_PRIVATE
 
         strategy = Strategy.objects.create(
             owner=request.user,
@@ -329,6 +418,31 @@ class StrategyDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class StrategyCheckView(APIView):
+    """POST /api/strategy/strategies/<pk>/check — re-run 三层检测 (owner only, code type)."""
+
+    permission_classes = [IsAuthenticated, HasRequiredPermissions]
+    required_permissions = ["strategy:update"]
+
+    def post(self, request, pk):
+        strategy = get_object_or_404(Strategy, pk=pk, owner=request.user)
+
+        if strategy.source_type != Strategy.SOURCE_CODE:
+            return Response(
+                {"detail": "只有代码类型策略需要检测。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from core.strategy.validation import validate_strategy_code
+
+        result = validate_strategy_code(strategy.code)
+        strategy.check_status = result.get("check_status", Strategy.CHECK_FAILED)
+        strategy.check_report = result.get("check_report", {})
+        strategy.save(update_fields=["check_status", "check_report", "updated_at"])
+
+        return Response(_serialize(strategy, request))
+
+
 class StrategySubmitView(APIView):
     """POST /api/strategy/strategies/<pk>/submit — submit own strategy for review."""
 
@@ -337,6 +451,17 @@ class StrategySubmitView(APIView):
 
     def post(self, request, pk):
         strategy = get_object_or_404(Strategy, pk=pk, owner=request.user)
+
+        # code 类型必须先通过技术检测才能提交审核 (template/builtin 不受此限)。
+        if (
+            strategy.source_type == Strategy.SOURCE_CODE
+            and strategy.check_status != Strategy.CHECK_PASSED
+        ):
+            return Response(
+                {"detail": "策略检测未通过,不能提交审核"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         strategy.visibility = Strategy.VISIBILITY_PUBLIC
         strategy.status = Strategy.STATUS_PENDING
         strategy.save(update_fields=["visibility", "status", "updated_at"])
