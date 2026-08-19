@@ -72,15 +72,17 @@
 
 ---
 
-## Task 3: 试运行层(复用回测引擎)
+## Task 3: 试运行层(隔离容器内跑,非主进程 exec)
 
-**Files:** `core/backtest/engine.py`(改)、`core/strategy/validation.py`(补试运行层)、扩测试。
+> **⚠️ 架构调整(安全评审结论)**:UC-T2 review 发现"同进程 exec 用户代码"存在 frame 逃逸 RCE。**试运行绝不能在 web/worker 主进程 exec 用户代码**——必须在隔离容器里跑。因此本任务依赖 T6(runner 支持 USER_CODE)+ T7(容器网络隔离),**执行顺序移到 T6/T7 之后**。AST/safe_exec(T2)仅作提交时输入清洗/早期报错(非安全边界)。
 
-- [ ] Step1: engine `_load_on_tick` 改造:支持传"代码字符串"来源(新增 `run_code(code, params, candles, ...)` 或 `_load_on_tick` 接受 code 参数走 safe_exec.exec_strategy),不破坏现有 _BUILTIN_MAP importlib 路径。
-- [ ] Step2: validation `check_trial_run(code) -> {ok, signal_count, error?}`:生成合成K线(参照 test_backtest `_build_crossover_candles` 造有涨跌趋势的~150根)→ safe_exec 取 on_tick → 复用 engine 跑 → 捕异常返 {tick,exception};正常返 {ok, signal_count}。
-- [ ] Step3: `validate_strategy_code(code) -> {check_status, check_report}`:组合语法+AST+试运行三层,任一失败即 failed + 该层 report。
-- [ ] Step4: 测试:能跑通on_tick→passed+signal_count;on_tick除零/未定义变量→failed+异常tick;三层组合。
-- [ ] Step5: pytest过。Commit `feat(usercode): 试运行层(复用回测引擎合成K线)+validate_strategy_code三层组合`。
+**Files:** `strategy-runner/runner.py`(加一次性试运行模式)、`core/strategy/validation.py`(补 check_trial_run:起隔离容器)、`core/strategy/tasks.py` 或新 `trial.py`、扩测试。
+
+- [ ] Step1: runner 支持"试运行模式":env `TRIAL_MODE=1` + `TRIAL_CANDLES`(合成K线JSON)时,不轮询/不连 backend,直接受控 exec USER_CODE 取 on_tick,喂 TRIAL_CANDLES 跑若干 tick,把结果(ok/signal_count/异常)写 stdout(JSON)后退出。复用真运行的受控 exec + 容器隔离(同一镜像同一沙箱)。
+- [ ] Step2: `validation.check_trial_run(code) -> {ok, signal_count, error?}`:生成合成K线(参照 test_backtest `_build_crossover_candles` ~150根),**用 docker SDK 起一个一次性隔离容器**(quanly-strategy-runner 镜像,TRIAL_MODE=1 + USER_CODE + TRIAL_CANDLES,加 cap_drop/read_only/network隔离/pids_limit/超时/无credential),读容器 stdout JSON 结果,容器退出即销毁。**主进程绝不 exec 用户代码**。超时(如30s)未完 → kill + failed。
+- [ ] Step3: `validate_strategy_code(code) -> {check_status, check_report}`:语法(T2)+AST(T2)+试运行(本任务,容器内)三层组合,任一失败即 failed + 该层 report。语法/AST 先跑(快、拦明显问题),过了才起容器试运行(慢)。
+- [ ] Step4: 测试:能跑通on_tick→passed+signal_count;on_tick除零→failed+异常;试运行容器机制(docker 打桩验证起容器参数含隔离项+TRIAL_MODE);三层组合(AST失败不进试运行)。
+- [ ] Step5: pytest过。Commit `feat(usercode): 试运行层(隔离容器内跑合成K线,非主进程exec)+三层组合`。
 
 ---
 
@@ -174,4 +176,6 @@
 
 ## 执行方式
 
-subagent-driven-development。依赖:T1模型→T2 AST/exec→T3试运行→T4 API→T5 v1冻结→T6 runner exec→T7网络隔离→T8内置→T9前端→T10验收。**重点review**:T2/T3(AST审查+受控exec的安全正确性,沙箱逃逸手法)、T7(网络隔离真隔离)、T4(code脱敏)。BASE=6235237。
+subagent-driven-development。**依赖顺序(安全评审后调整)**:T1模型→T2 AST/exec(输入清洗层)→T5 v1冻结→T6 runner exec(含试运行模式)→T7网络隔离→**T3试运行(依赖T6/T7,容器内跑)**→T4 API→T8内置→T9前端→T10验收。**重点review**:T2(AST输入清洗,frame逃逸)、T7(网络隔离=真安全边界)、T3(试运行必须容器内不在主进程exec)、T4(code脱敏)。
+
+**★安全底线(评审结论)**:AST/safe_exec 是输入清洗/早期报错,**不是安全边界**;唯一安全边界=容器(cap_drop/read_only/network隔离/non-root/pids_limit/超时)。**绝不在 web/worker 主进程 exec 不可信用户代码**(含试运行)。T7 容器隔离落地并验收前,不上线自写代码执行。BASE=6235237。
