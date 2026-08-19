@@ -15,11 +15,11 @@ from core.accounts.models import Role, UserRole
 # ──────────────────────────────────────────────
 
 def _make_market_viewer(username: str) -> User:
-    """Create a user with market:view and page:market permissions."""
+    """Create a user with market:view permission."""
     user = User.objects.create_user(username, password="pw")
     role = Role.objects.create(
         name=f"market_viewer_{username}",
-        permissions=["market:view", "page:market"],
+        permissions=["market:view"],
     )
     UserRole.objects.create(user=user, role=role)
     return user
