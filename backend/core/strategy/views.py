@@ -402,7 +402,22 @@ class StrategyDetailView(APIView):
         strategy.description = description
         strategy.visibility = visibility
         strategy.status = new_status
-        strategy.save(update_fields=["name", "params", "description", "visibility", "status", "updated_at"])
+        update_fields = ["name", "params", "description", "visibility", "status", "updated_at"]
+
+        # code 类型:支持改代码。改动后重跑检测(check_status/report),
+        # 编辑代码等于重新提交,须重新通过检测才能 submit。
+        if strategy.source_type == Strategy.SOURCE_CODE and "code" in request.data:
+            new_code = request.data.get("code") or ""
+            if new_code != strategy.code:
+                from core.strategy.validation import validate_strategy_code
+
+                strategy.code = new_code
+                result = validate_strategy_code(new_code)
+                strategy.check_status = result.get("check_status", Strategy.CHECK_FAILED)
+                strategy.check_report = result.get("check_report", {})
+                update_fields += ["code", "check_status", "check_report"]
+
+        strategy.save(update_fields=update_fields)
 
         return Response(_serialize(strategy, request))
 

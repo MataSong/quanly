@@ -917,3 +917,30 @@ def test_code_visible_for_owner_and_public_approved():
     raw2 = factory.get("/"); req_pub = DRFRequest(raw2); req_pub.user = viewer
     d_pub = StrategySerializer(pub, context={"request": req_pub}).data
     assert d_pub["code"] == _SAMPLE_CODE
+
+
+@pytest.mark.django_db
+def test_update_code_strategy_reruns_check(api_client, monkeypatch):
+    """编辑 code 类型策略改代码 → 重跑检测,check_status 更新。"""
+    from unittest.mock import patch
+    from core.strategy.models import Strategy
+
+    owner = _make_user("edit_code_owner", ["strategy:view", "strategy:update"])
+    strat = Strategy.objects.create(
+        owner=owner, name="Code Edit", source_type=Strategy.SOURCE_CODE,
+        code="def on_tick(ctx, params):\n    pass\n", code_ref="",
+        check_status=Strategy.CHECK_PASSED, status=Strategy.STATUS_DRAFT,
+        visibility=Strategy.VISIBILITY_PRIVATE,
+    )
+    api_client.force_authenticate(owner)
+    with patch(
+        "core.strategy.validation.validate_strategy_code",
+        return_value={"check_status": "failed", "check_report": {"stage": "ast"}},
+    ):
+        resp = api_client.put(f"/api/strategy/strategies/{strat.id}", {
+            "code": "import os\ndef on_tick(ctx, params):\n    pass\n",
+        }, format="json")
+    assert resp.status_code == 200
+    strat.refresh_from_db()
+    assert "import os" in strat.code          # code 真的改了
+    assert strat.check_status == "failed"     # 重跑了检测
