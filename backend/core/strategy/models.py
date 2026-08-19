@@ -9,10 +9,12 @@ class Strategy(models.Model):
     """Describes a trading strategy (builtin or user-uploaded)."""
 
     SOURCE_BUILTIN = "builtin"
-    SOURCE_UPLOADED = "uploaded"
+    SOURCE_UPLOADED = "uploaded"  # 点击式:内置模板+参数(template 语义)
+    SOURCE_CODE = "code"          # 用户上传 Python 脚本
     SOURCE_CHOICES = [
         (SOURCE_BUILTIN, "Built-in"),
-        (SOURCE_UPLOADED, "Uploaded"),
+        (SOURCE_UPLOADED, "Template"),
+        (SOURCE_CODE, "User Code"),
     ]
 
     VISIBILITY_PRIVATE = "private"
@@ -31,6 +33,16 @@ class Strategy(models.Model):
         (STATUS_PENDING, "Pending"),
         (STATUS_APPROVED, "Approved"),
         (STATUS_REJECTED, "Rejected"),
+    ]
+
+    # 提交检测状态(技术能否跑,独立于 status 审核维度)
+    CHECK_PENDING = "pending"
+    CHECK_PASSED = "passed"
+    CHECK_FAILED = "failed"
+    CHECK_CHOICES = [
+        (CHECK_PENDING, "Pending"),
+        (CHECK_PASSED, "Passed"),
+        (CHECK_FAILED, "Failed"),
     ]
 
     name = models.CharField(max_length=128)
@@ -61,6 +73,15 @@ class Strategy(models.Model):
     description = models.TextField(blank=True, default="")
     reject_reason = models.TextField(blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
+
+    # ── 用户自写代码字段(仅 source_type=code) ──────────────────────────────────
+    # 用户上传的 Python 源码;跑在受控 exec + 网络隔离容器里。
+    code = models.TextField(blank=True, default="")
+    # 提交检测(语法/AST安全/试运行)结果,独立于 status 审核。
+    check_status = models.CharField(
+        max_length=16, choices=CHECK_CHOICES, default=CHECK_PENDING
+    )
+    check_report = models.JSONField(default=dict)
 
     class Meta:
         app_label = "core_strategy"
