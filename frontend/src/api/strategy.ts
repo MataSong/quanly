@@ -18,7 +18,10 @@ export interface Strategy {
   description?: string;
   reject_reason?: string;
   updated_at?: string;
-  source_type?: "builtin" | "uploaded";
+  source_type?: "builtin" | "uploaded" | "code";
+  code?: string;
+  check_status?: "pending" | "passed" | "failed";
+  check_report?: Record<string, unknown>;
   performance?: StrategyPerformance;
 }
 
@@ -31,8 +34,10 @@ export interface StrategyPerformance {
 
 export interface CreateStrategyPayload {
   name: string;
-  template_ref: string;
-  params: Record<string, unknown>;
+  source_type?: "uploaded" | "code";
+  template_ref?: string;
+  params?: Record<string, unknown>;
+  code?: string;
   description?: string;
   visibility?: "private" | "public";
 }
@@ -153,6 +158,12 @@ export async function deleteStrategy(id: number): Promise<void> {
 /** POST /strategy/strategies/{id}/submit — 提交审核(private→public+pending) */
 export async function submitStrategy(id: number): Promise<Strategy> {
   const r = await http.post<Strategy>(`/strategy/strategies/${id}/submit`);
+  return r.data;
+}
+
+/** POST /strategy/strategies/{id}/check — 重跑代码检测(语法+AST+试运行) */
+export async function checkStrategy(id: number): Promise<Strategy> {
+  const r = await http.post<Strategy>(`/strategy/strategies/${id}/check`);
   return r.data;
 }
 
