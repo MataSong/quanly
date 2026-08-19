@@ -15,9 +15,17 @@ Test categories:
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from core.strategy.validation import check_syntax, check_ast, ALLOWED_MODULES
+from core.strategy.validation import (
+    check_syntax,
+    check_ast,
+    check_trial_run,
+    validate_strategy_code,
+    ALLOWED_MODULES,
+)
 from core.strategy.safe_exec import exec_strategy, build_safe_builtins
 
 
@@ -965,3 +973,248 @@ def on_tick(ctx, params):
         assert r["ok"] is False
         assert any(v["rule"] == "forbidden_import" for v in r["violations"])
 
+
+
+# ===========================================================================
+# 5. check_trial_run — isolated-container dry run (docker mocked)
+#
+# These tests NEVER launch a real container and NEVER exec user code in-process.
+# docker.from_env is patched; the fake container returns canned stdout logs.
+# ===========================================================================
+
+from unittest import mock  # noqa: E402
+
+
+class _FakeContainer:
+    """Minimal stand-in for a docker container object."""
+
+    def __init__(self, stdout=b'{"ok": true, "signal_count": 2}\n', wait_raises=None):
+        self._stdout = stdout
+        self._wait_raises = wait_raises
+        self.waited = False
+        self.killed = False
+        self.removed = False
+
+    def wait(self, timeout=None):
+        self.waited = True
+        if self._wait_raises is not None:
+            raise self._wait_raises
+        return {"StatusCode": 0}
+
+    def kill(self):
+        self.killed = True
+
+    def logs(self, stdout=True, stderr=False):
+        # T3 must read stdout only (stderr carries user print()).
+        assert stdout is True
+        assert stderr is False
+        return self._stdout
+
+    def remove(self, force=False):
+        self.removed = True
+
+
+def _patch_docker(container=None, from_env_raises=None, run_raises=None):
+    """Return a patched fake `docker` module and its captured run kwargs.
+
+    Usage:
+        fake_docker, captured = _patch_docker(container=...)
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            ...
+    """
+    captured: dict = {}
+
+    fake_client = mock.MagicMock()
+
+    def _run(image, **kwargs):
+        if run_raises is not None:
+            raise run_raises
+        captured["image"] = image
+        captured.update(kwargs)
+        return container
+
+    fake_client.containers.run.side_effect = _run
+
+    fake_docker = mock.MagicMock()
+    if from_env_raises is not None:
+        fake_docker.from_env.side_effect = from_env_raises
+    else:
+        fake_docker.from_env.return_value = fake_client
+
+    return fake_docker, captured
+
+
+TRIAL_CODE = VALID_STRATEGY  # any AST-clean strategy; runner is mocked anyway
+
+
+class TestCheckTrialRun:
+    def test_ok_result_parsed(self):
+        cont = _FakeContainer(stdout=b'{"ok": true, "signal_count": 2}\n')
+        fake_docker, captured = _patch_docker(container=cont)
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is True
+        assert r["signal_count"] == 2
+        assert cont.removed is True  # container cleaned up
+
+    def test_hardening_kwargs_present(self):
+        """The launch must include the full isolation kwargs + TRIAL_MODE env."""
+        cont = _FakeContainer()
+        fake_docker, captured = _patch_docker(container=cont)
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            check_trial_run(TRIAL_CODE)
+
+        assert captured["image"] == "quanly-strategy-runner"
+        assert captured["network_disabled"] is True
+        assert captured["cap_drop"] == ["ALL"]
+        assert captured["read_only"] is True
+        assert captured["pids_limit"] == 128
+        assert "no-new-privileges:true" in captured["security_opt"]
+        assert captured["mem_limit"] == "256m"
+        assert "/tmp" in captured["tmpfs"]
+        env = captured["environment"]
+        assert env["TRIAL_MODE"] == "1"
+        assert env["USER_CODE"] == TRIAL_CODE
+        assert env["TRIAL_MAX_TICKS"] == "200"
+        # TRIAL_CANDLES is a JSON list of synthetic candles.
+        candles = json.loads(env["TRIAL_CANDLES"])
+        assert isinstance(candles, list)
+        assert len(candles) >= 100
+        assert {"ts", "o", "h", "l", "c", "vol", "volCcy"} <= set(candles[0].keys())
+
+    def test_failed_result_parsed(self):
+        cont = _FakeContainer(stdout=b'{"ok": false, "error": "boom", "tick": 7}\n')
+        fake_docker, _ = _patch_docker(container=cont)
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is False
+        assert r["error"] == "boom"
+        assert r["tick"] == 7
+
+    def test_timeout_kills_and_fails(self):
+        cont = _FakeContainer(wait_raises=Exception("read timed out"))
+        fake_docker, _ = _patch_docker(container=cont)
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is False
+        assert "timed out" in r["error"]
+        assert cont.killed is True
+        assert cont.removed is True
+
+    def test_docker_unavailable_from_env_raises(self):
+        fake_docker, _ = _patch_docker(from_env_raises=Exception("no daemon"))
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is False
+        assert r["error"] == "trial unavailable"
+
+    def test_docker_module_missing(self):
+        # Simulate `import docker` failing entirely.
+        with mock.patch.dict("sys.modules", {"docker": None}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is False
+        assert r["error"] == "trial unavailable"
+
+    def test_container_start_failure(self):
+        fake_docker, _ = _patch_docker(run_raises=Exception("image not found"))
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is False
+        assert "failed to start" in r["error"]
+
+    def test_empty_stdout_fails(self):
+        cont = _FakeContainer(stdout=b"")
+        fake_docker, _ = _patch_docker(container=cont)
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is False
+        assert "no result" in r["error"]
+
+    def test_non_json_stdout_fails(self):
+        cont = _FakeContainer(stdout=b"not json at all\n")
+        fake_docker, _ = _patch_docker(container=cont)
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is False
+        assert "not JSON" in r["error"]
+
+    def test_last_line_used_when_stray_output(self):
+        # User print() should go to stderr, but be robust: take last stdout line.
+        cont = _FakeContainer(stdout=b'garbage line\n{"ok": true, "signal_count": 5}\n')
+        fake_docker, _ = _patch_docker(container=cont)
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            r = check_trial_run(TRIAL_CODE)
+        assert r["ok"] is True
+        assert r["signal_count"] == 5
+
+
+# ===========================================================================
+# 6. validate_strategy_code — three-layer combinator
+# ===========================================================================
+
+
+@pytest.mark.django_db
+class TestValidateStrategyCode:
+    def test_syntax_error_fails_at_syntax_without_container(self):
+        bad = "def on_tick(ctx, params)\n    pass\n"  # missing colon
+        with mock.patch("core.strategy.validation.check_trial_run") as m_trial:
+            result = validate_strategy_code(bad)
+        assert result["check_status"] == "failed"
+        assert result["check_report"]["stage"] == "syntax"
+        m_trial.assert_not_called()  # never reached layer 3
+
+    def test_forbidden_import_fails_at_ast_without_docker(self):
+        """import os → AST failure. Prove docker.from_env is NEVER called and
+        user code is NEVER exec'd in-process."""
+        code = "import os\ndef on_tick(ctx, params):\n    pass\n"
+        fake_docker, _ = _patch_docker(container=_FakeContainer())
+        with mock.patch.dict("sys.modules", {"docker": fake_docker}):
+            result = validate_strategy_code(code)
+        assert result["check_status"] == "failed"
+        assert result["check_report"]["stage"] == "ast"
+        assert any(
+            v["rule"] == "forbidden_import"
+            for v in result["check_report"]["violations"]
+        )
+        # AST failure must not start a container (no exec, no docker).
+        fake_docker.from_env.assert_not_called()
+
+    def test_missing_on_tick_fails_at_ast(self):
+        code = "x = 1\n"
+        with mock.patch("core.strategy.validation.check_trial_run") as m_trial:
+            result = validate_strategy_code(code)
+        assert result["check_status"] == "failed"
+        assert result["check_report"]["stage"] == "ast"
+        m_trial.assert_not_called()
+
+    def test_clean_code_calls_trial_and_passes(self):
+        with mock.patch(
+            "core.strategy.validation.check_trial_run",
+            return_value={"ok": True, "signal_count": 3},
+        ) as m_trial:
+            result = validate_strategy_code(VALID_STRATEGY)
+        m_trial.assert_called_once_with(VALID_STRATEGY)
+        assert result["check_status"] == "passed"
+        assert result["check_report"]["stage"] == "trial"
+        assert result["check_report"]["ok"] is True
+        assert result["check_report"]["signal_count"] == 3
+
+    def test_clean_code_trial_failure_reports_trial_stage(self):
+        with mock.patch(
+            "core.strategy.validation.check_trial_run",
+            return_value={"ok": False, "error": "runtime boom", "tick": 4},
+        ):
+            result = validate_strategy_code(VALID_STRATEGY)
+        assert result["check_status"] == "failed"
+        assert result["check_report"]["stage"] == "trial"
+        assert result["check_report"]["error"] == "runtime boom"
+        assert result["check_report"]["tick"] == 4
+
+    def test_trial_unavailable_degrades_to_failed(self):
+        with mock.patch(
+            "core.strategy.validation.check_trial_run",
+            return_value={"ok": False, "error": "trial unavailable"},
+        ):
+            result = validate_strategy_code(VALID_STRATEGY)
+        assert result["check_status"] == "failed"
+        assert result["check_report"]["stage"] == "trial"
