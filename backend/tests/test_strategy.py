@@ -463,6 +463,90 @@ def test_run_strategy_task_injects_only_safe_env():
 
 
 @pytest.mark.django_db
+def test_run_strategy_task_hardening_kwargs():
+    """UC-T7: 容器起动参数含隔离网络/pids_limit/cap_drop/read_only/no-new-privileges/mem/cpu。"""
+    from core.strategy.tasks import run_strategy, _STRATEGY_NETWORK
+
+    user = _make_user("hardening_user")
+    cred = _make_credential(user)
+    run, _ = _make_run(user, credential=cred, status=StrategyRun.STATUS_PENDING)
+
+    mock_container = MagicMock()
+    mock_container.id = "hardened_container_id_1"
+    mock_docker_client = MagicMock()
+    mock_docker_client.containers.run.return_value = mock_container
+
+    with patch("docker.from_env", return_value=mock_docker_client):
+        run_strategy(run.pk)
+
+    kwargs = mock_docker_client.containers.run.call_args.kwargs
+    # 网络隔离:接入隔离网络(默认 quanly_strategy_isolated),NOT default/postgres 可达网。
+    assert kwargs["network"] == _STRATEGY_NETWORK
+    assert _STRATEGY_NETWORK != "quanly_default"
+    # fork 炸弹防护
+    assert kwargs["pids_limit"] == 128
+    # 现有加固保留
+    assert kwargs["cap_drop"] == ["ALL"]
+    assert kwargs["read_only"] is True
+    assert "no-new-privileges:true" in kwargs["security_opt"]
+    assert kwargs["mem_limit"] == "256m"
+    assert kwargs["cpu_quota"] == 50000
+
+
+@pytest.mark.django_db
+def test_run_strategy_task_injects_user_code_for_code_strategy():
+    """UC-T7: source_type=code → 注入 USER_CODE = strategy.code。"""
+    from core.strategy.tasks import run_strategy
+
+    user = _make_user("usercode_user")
+    cred = _make_credential(user)
+    strategy = Strategy.objects.create(
+        code_ref="my_user_strat",
+        name="My User Strat",
+        source_type=Strategy.SOURCE_CODE,
+        code="def on_tick(ctx):\n    return None\n",
+        default_params={},
+    )
+    run, _ = _make_run(
+        user, strategy=strategy, credential=cred, status=StrategyRun.STATUS_PENDING
+    )
+
+    mock_container = MagicMock()
+    mock_container.id = "usercode_container_1"
+    mock_docker_client = MagicMock()
+    mock_docker_client.containers.run.return_value = mock_container
+
+    with patch("docker.from_env", return_value=mock_docker_client):
+        run_strategy(run.pk)
+
+    env = mock_docker_client.containers.run.call_args.kwargs["environment"]
+    assert env["USER_CODE"] == "def on_tick(ctx):\n    return None\n"
+
+
+@pytest.mark.django_db
+def test_run_strategy_task_no_user_code_for_builtin():
+    """UC-T7: builtin/template 策略不注入 USER_CODE(走 CODE_REF)。"""
+    from core.strategy.tasks import run_strategy
+
+    user = _make_user("builtin_user")
+    cred = _make_credential(user)
+    # _make_strategy 默认 source_type=builtin
+    run, _ = _make_run(user, credential=cred, status=StrategyRun.STATUS_PENDING)
+
+    mock_container = MagicMock()
+    mock_container.id = "builtin_container_1"
+    mock_docker_client = MagicMock()
+    mock_docker_client.containers.run.return_value = mock_container
+
+    with patch("docker.from_env", return_value=mock_docker_client):
+        run_strategy(run.pk)
+
+    env = mock_docker_client.containers.run.call_args.kwargs["environment"]
+    assert "USER_CODE" not in env
+    assert env["CODE_REF"] == "dual_ma"
+
+
+@pytest.mark.django_db
 def test_run_strategy_task_updates_token_hash():
     """run_strategy generates a fresh token and updates run_token_hash."""
     from core.strategy.tasks import run_strategy

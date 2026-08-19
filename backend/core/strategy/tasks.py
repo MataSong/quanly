@@ -19,8 +19,14 @@ logger = logging.getLogger("quanly.strategy")
 
 # Backend URL injected into containers so they know where to call back.
 _BACKEND_URL = os.environ.get("STRATEGY_BACKEND_URL", "http://backend:8000")
-# Docker network the strategy container joins so it can reach the backend.
-_STRATEGY_NETWORK = os.environ.get("STRATEGY_DOCKER_NETWORK", "quanly_default")
+# UC-T7 安全边界:策略容器只接入一个 internal(不通外网)网络,该网络里只有 backend
+# 可达(backend 双网络:default 连 postgres/redis,isolated 供策略容器回调 runner API)。
+# 用户代码因此:不通外网(internal)、不通 postgres/redis/market-collector(它们只在 default)。
+# compose 网络实际名带项目前缀,故用 STRATEGY_DOCKER_NETWORK 让部署时传入实际名(见 docker-compose.yml
+# 的 celery-worker environment)。默认值是 compose 项目名 quanly 前缀下的合理猜测。
+_STRATEGY_NETWORK = os.environ.get(
+    "STRATEGY_DOCKER_NETWORK", "quanly_strategy_isolated"
+)
 
 
 @celery_app.task(bind=True, name="core.strategy.run_strategy")
@@ -69,6 +75,11 @@ def run_strategy(self, run_id: int):
         "PARAMS": json.dumps(run.params),
     }
 
+    # UC-T7: source_type=code(用户自写脚本)→ 注入 USER_CODE,runner(T6)以受控 exec 执行。
+    # runner 有 USER_CODE 时优先,CODE_REF 无意义;builtin/template 不注入,走 CODE_REF(现状)。
+    if run.strategy.source_type == run.strategy.SOURCE_CODE:
+        container_env["USER_CODE"] = run.strategy.code
+
     logger.info(
         "run_strategy: starting container for run=%s strategy=%s symbol=%s env_keys=%s",
         run_id,
@@ -90,6 +101,7 @@ def run_strategy(self, run_id: int):
             cap_drop=["ALL"],
             read_only=True,
             security_opt=["no-new-privileges:true"],  # 安全加固:禁止提权
+            pids_limit=128,        # UC-T7: 防 fork 炸弹
             network=_STRATEGY_NETWORK,
             # Temporary writable tmpfs so the runner can write temp files.
             tmpfs={"/tmp": "size=64m,mode=1777"},

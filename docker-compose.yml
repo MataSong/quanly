@@ -33,6 +33,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    # UC-T7: backend 双网络 —— default 连 postgres/redis;strategy_isolated(internal,不通外网)
+    # 供策略容器回调 runner API。策略容器只接 strategy_isolated,故到不了 default 里的服务/外网。
+    networks:
+      - default
+      - strategy_isolated
     environment:
       QUANLY_ENV: ${QUANLY_ENV:-prod}
       QUANLY_SECRET_KEY: ${QUANLY_SECRET_KEY}
@@ -102,6 +107,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # UC-T7: 策略容器要接入的隔离网络实际名(compose 给网络加项目前缀,项目名默认 quanly →
+      # quanly_strategy_isolated)。若 COMPOSE_PROJECT_NAME 变了,须相应改此值或用 env 覆盖。
+      STRATEGY_DOCKER_NETWORK: ${STRATEGY_DOCKER_NETWORK:-quanly_strategy_isolated}
     depends_on:
       redis:
         condition: service_healthy
@@ -124,3 +132,11 @@ services:
 volumes:
   postgres_data:
   redis_data:
+
+networks:
+  # 默认桥接网络（postgres/redis/backend/collector/worker/nginx 互通，可出外网）。
+  default:
+  # UC-T7 策略隔离网络：internal=true → 无外部路由（不通外网）。策略容器只接此网，
+  # 网内只有 backend（双网络）可达，故用户代码到不了 postgres/redis/外网/其他容器。
+  strategy_isolated:
+    internal: true
