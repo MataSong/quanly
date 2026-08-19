@@ -150,7 +150,7 @@ class RunnerCtx:
     def candles(self, bar: str = "1m", limit: int = 100) -> list[dict]:
         """Fetch candles oldest-first: [{ts, o, h, l, c, vol, volCcy}, ...]"""
         data = self._get(
-            "/api/strategy/runner/candles",
+            "/api/strategy/runner/v1/candles",
             params={"bar": bar, "limit": limit},
         )
         # Backend returns {"candles": [...]}
@@ -161,7 +161,7 @@ class RunnerCtx:
         body: dict[str, Any] = {"side": "buy", "sz": sz, "ord_type": ord_type}
         if px is not None:
             body["px"] = px
-        data = self._post("/api/strategy/runner/order", body)
+        data = self._post("/api/strategy/runner/v1/order", body)
         return data.get("ordId", "")
 
     def sell(self, sz: str, ord_type: str = "market", px: str | None = None) -> str:
@@ -169,7 +169,7 @@ class RunnerCtx:
         body: dict[str, Any] = {"side": "sell", "sz": sz, "ord_type": ord_type}
         if px is not None:
             body["px"] = px
-        data = self._post("/api/strategy/runner/order", body)
+        data = self._post("/api/strategy/runner/v1/order", body)
         return data.get("ordId", "")
 
     def log(self, level: str, message: str) -> None:
@@ -177,7 +177,7 @@ class RunnerCtx:
         try:
             # Log locally too so Docker logs capture it even if backend is down.
             log.info("[%s] %s", level.upper(), message)
-            self._post("/api/strategy/runner/log", {"level": level, "message": message})
+            self._post("/api/strategy/runner/v1/log", {"level": level, "message": message})
         except Exception as exc:
             log.warning("log POST failed (continuing): %s", exc)
 

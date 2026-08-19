@@ -41,7 +41,12 @@ urlpatterns = [
     path("runs/<int:pk>/stop", StrategyRunStopView.as_view(), name="strategy-run-stop"),
     path("runs/<int:pk>/logs", StrategyRunLogsView.as_view(), name="strategy-run-logs"),
 
-    # Runner API (X-Run-Token)
+    # Runner API v1 (X-Run-Token) — 冻结契约,只增不改,变更走 v2。
+    # 运行中的策略容器打的是 /runner/v1/*,后端永远保留,重构不打断旧容器。
+    path("runner/v1/candles", RunnerCandlesView.as_view(), name="runner-v1-candles"),
+    path("runner/v1/order", RunnerOrderView.as_view(), name="runner-v1-order"),
+    path("runner/v1/log", RunnerLogView.as_view(), name="runner-v1-log"),
+    # 旧无版本路径:保留为 v1 别名(兼容更早镜像的运行中容器)。
     path("runner/candles", RunnerCandlesView.as_view(), name="runner-candles"),
     path("runner/order", RunnerOrderView.as_view(), name="runner-order"),
     path("runner/log", RunnerLogView.as_view(), name="runner-log"),
