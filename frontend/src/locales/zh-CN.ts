@@ -310,6 +310,10 @@ export default {
       low: "低",
       close: "收",
       time: "时间",
+      change: "涨跌额",
+      changePct: "涨跌幅",
+      amplitude: "振幅",
+      vol: "成交量",
     },
   },
   trading: {

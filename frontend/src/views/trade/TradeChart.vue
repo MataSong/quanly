@@ -68,6 +68,18 @@
           <span class="ohlc-label">{{ t("trade.ohlc.close") }}</span>
           <span class="ohlc-val">{{ tooltip.close }}</span>
         </div>
+        <div class="ohlc-row">
+          <span class="ohlc-label">{{ t("trade.ohlc.change") }}</span>
+          <span class="ohlc-val">{{ tooltip.change }} ({{ tooltip.changePct }})</span>
+        </div>
+        <div class="ohlc-row">
+          <span class="ohlc-label">{{ t("trade.ohlc.amplitude") }}</span>
+          <span class="ohlc-val">{{ tooltip.amplitude }}</span>
+        </div>
+        <div class="ohlc-row">
+          <span class="ohlc-label">{{ t("trade.ohlc.vol") }}</span>
+          <span class="ohlc-val">{{ tooltip.vol }}</span>
+        </div>
       </div>
 
       <div ref="chartContainer" class="chart-container" />
@@ -125,8 +137,15 @@ const tooltip = reactive({
   high: "",
   low: "",
   close: "",
+  change: "",      // 涨跌额 close-open
+  changePct: "",   // 涨跌幅 %
+  amplitude: "",   // 振幅 (high-low)/open %
+  vol: "",         // 成交量
   isUp: true,
 });
+
+// time(秒) → 原始 candle 的成交量(vol),用于 tooltip 显示(series 只存 OHLC)。
+const volMap = new Map<number, string>();
 
 // ---------------------------------------------------------------- timezone helpers
 
@@ -181,8 +200,11 @@ function applyTimezone() {
 // ---------------------------------------------------------------- chart helpers
 
 function toChartBar(c: Candle): CandlestickData {
+  const time = Math.floor(c.ts / 1000);
+  // 记录成交量供 tooltip 显示(series 只存 OHLC,vol 单独存)
+  if (c.vol != null) volMap.set(time, String(c.vol));
   return {
-    time: Math.floor(c.ts / 1000) as unknown as CandlestickData["time"],
+    time: time as unknown as CandlestickData["time"],
     open: parseFloat(c.o),
     high: parseFloat(c.h),
     low: parseFloat(c.l),
@@ -266,14 +288,24 @@ function subscribeCrosshair() {
 
     tooltip.x = Math.max(8, x);
     tooltip.y = Math.max(8, y);
-    tooltip.open = formatPrice(bar.open as number);
-    tooltip.high = formatPrice(bar.high as number);
-    tooltip.low = formatPrice(bar.low as number);
-    tooltip.close = formatPrice(bar.close as number);
-    tooltip.isUp = (bar.close as number) >= (bar.open as number);
+    const o = bar.open as number;
+    const h = bar.high as number;
+    const l = bar.low as number;
+    const c = bar.close as number;
+    tooltip.open = formatPrice(o);
+    tooltip.high = formatPrice(h);
+    tooltip.low = formatPrice(l);
+    tooltip.close = formatPrice(c);
+    // 涨跌额/涨跌幅/振幅(对标 OKX)
+    const chg = c - o;
+    tooltip.change = (chg >= 0 ? "+" : "") + formatPrice(chg);
+    tooltip.changePct = o !== 0 ? (chg >= 0 ? "+" : "") + ((chg / o) * 100).toFixed(2) + "%" : "—";
+    tooltip.amplitude = o !== 0 ? (((h - l) / o) * 100).toFixed(2) + "%" : "—";
+    const ts = param.time as unknown as number;
+    tooltip.vol = volMap.get(ts) ?? "—";
+    tooltip.isUp = c >= o;
 
     // Format time using selected timezone
-    const ts = param.time as unknown as number;
     const fmt = new Intl.DateTimeFormat("en-GB", {
       timeZone: selectedTz.value,
       year: "numeric",

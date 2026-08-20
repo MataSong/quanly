@@ -312,6 +312,10 @@ const en: typeof zh = {
       low: "L",
       close: "C",
       time: "Time",
+      change: "Change",
+      changePct: "Change %",
+      amplitude: "Amplitude",
+      vol: "Volume",
     },
   },
   trading: {
