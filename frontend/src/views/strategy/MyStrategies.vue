@@ -676,9 +676,15 @@ function canSubmit(row: Strategy): boolean {
 // ── Submit for audit ──────────────────────────────────────────────────────────
 
 async function onSubmit(row: Strategy) {
+  // 方向A:提交审核会强制把策略设为公开上架。若当前是私有,明确告知
+  // 用户此举会推翻其"私有"设置,避免"改私有却被提交覆盖回公开"的困惑。
+  const confirmMsg =
+    row.visibility === "private"
+      ? t("strategy.submitAuditConfirmPrivate")
+      : t("strategy.submitAuditConfirm");
   try {
     await ElMessageBox.confirm(
-      t("strategy.submitAuditConfirm"),
+      confirmMsg,
       t("strategy.submitAudit"),
       { type: "warning", confirmButtonText: t("common.confirm"), cancelButtonText: t("common.cancel") },
     );

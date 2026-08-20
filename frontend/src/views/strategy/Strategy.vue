@@ -152,7 +152,7 @@
             />
           </el-select>
           <template v-else>
-            <el-input v-model="createForm.symbol" placeholder="BTC-USDT" />
+            <el-input v-model="createForm.symbol" :placeholder="t('strategy.symbolPlaceholder')" />
             <div style="font-size: 12px; color: var(--gray-400); margin-top: 4px">
               {{ t('strategy.symbolFallbackHint') }}
             </div>

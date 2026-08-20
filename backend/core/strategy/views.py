@@ -96,13 +96,13 @@ class StrategySerializer(drf_serializers.ModelSerializer):
         req = self._request()
         # 内置策略: return params (内置用 default_params, 用户实例用 params)
         if obj.owner_id is None:
-            return obj.params if obj.params else obj.default_params
+            return obj.params or obj.default_params or {}
         # 自己的策略: 正常返回
         if req is not None and obj.owner_id == req.user.id:
-            return obj.params
+            return obj.params or {}
         # 他人策略: 只有 public+approved 才暴露 params
         if obj.visibility == Strategy.VISIBILITY_PUBLIC and obj.status == Strategy.STATUS_APPROVED:
-            return obj.params
+            return obj.params or {}
         # 他人私有/pending/rejected: 脱敏
         return {}
 

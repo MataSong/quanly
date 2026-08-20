@@ -221,7 +221,7 @@
             />
           </el-select>
           <template v-else>
-            <el-input v-model="form.symbol" placeholder="BTC-USDT" />
+            <el-input v-model="form.symbol" :placeholder="t('backtest.symbolPlaceholder')" />
             <div class="hint-text">{{ t("backtest.symbolFallbackHint") }}</div>
           </template>
         </el-form-item>

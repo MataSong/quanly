@@ -160,7 +160,9 @@
       <div class="main-inner">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <ErrorBoundary>
+              <component :is="Component" />
+            </ErrorBoundary>
           </transition>
         </router-view>
       </div>
@@ -186,6 +188,7 @@ import {
   Shop,
 } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
+import ErrorBoundary from "@/components/ErrorBoundary.vue";
 import { useAuthStore } from "@/stores/auth";
 import BrandLogo from "@/components/BrandLogo.vue";
 import LocaleSwitcher from "@/components/LocaleSwitcher.vue";

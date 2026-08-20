@@ -12,6 +12,13 @@ import "@/styles/element-overrides.scss";
 import App from "./App.vue";
 
 const app = createApp(App);
+
+// 全局兜底:未被 ErrorBoundary 捕获的异常记录到 console,不静默吞掉。
+app.config.errorHandler = (err, _instance, info) => {
+  // eslint-disable-next-line no-console
+  console.error("[vue errorHandler]", info, err);
+};
+
 app.use(createPinia());
 app.use(ElementPlus);
 app.use(i18n);
