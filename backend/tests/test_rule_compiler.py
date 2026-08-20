@@ -137,6 +137,12 @@ def test_validate_cross_with_const_raises():
     "abc",
     None,
     [1, 2],
+    float("inf"),
+    float("-inf"),
+    float("nan"),
+    "inf",
+    "nan",
+    "1e400",  # overflows to inf
 ])
 def test_validate_injection_period_raises(payload):
     cfg = {"buy": {"conditions": [
@@ -149,6 +155,12 @@ def test_validate_injection_period_raises(payload):
     "__import__('os')",
     "open('/etc/passwd')",
     "abc",
+    float("inf"),
+    float("-inf"),
+    float("nan"),
+    "inf",
+    "nan",
+    "1e400",
 ])
 def test_validate_injection_const_raises(payload):
     cfg = {"buy": {"conditions": [
@@ -157,16 +169,28 @@ def test_validate_injection_const_raises(payload):
         validate_rule_config(cfg)
 
 
-def test_validate_injection_sz_raises():
-    cfg = {**_LEGAL_CFG, "sz": "__import__('os')"}
+@pytest.mark.parametrize("payload", ["__import__('os')", float("inf"), float("nan"), "inf", "1e400"])
+def test_validate_injection_sz_raises(payload):
+    cfg = {**_LEGAL_CFG, "sz": payload}
     with pytest.raises(ValueError):
         validate_rule_config(cfg)
 
 
-def test_validate_injection_risk_pct_raises():
-    cfg = {**_LEGAL_CFG, "risk": {"take_profit_pct": "eval('9')"}}
+@pytest.mark.parametrize("payload", ["eval('9')", float("inf"), float("nan"), "inf", "1e400"])
+def test_validate_injection_risk_pct_raises(payload):
+    cfg = {**_LEGAL_CFG, "risk": {"take_profit_pct": payload}}
     with pytest.raises(ValueError):
         validate_rule_config(cfg)
+
+
+def test_compile_rejects_non_finite_const():
+    # I-1 regression: float('inf') must not reach the generator (would emit bare
+    # `inf` — compiles + passes AST but NameError at runtime → silent failure).
+    for bad in (float("inf"), float("nan"), float("-inf")):
+        cfg = {"buy": {"conditions": [
+            {"left": {"ind": "price"}, "op": ">", "right": {"const": bad}}]}}
+        with pytest.raises(ValueError):
+            compile_rule(cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +205,12 @@ def _assert_compiles_and_passes_ast(cfg):
     assert result["ok"], result["violations"]
     # sanity: compile() directly too
     compile(code, "<gen>", "exec")
+    # M-2: every generated variant must be free of dangerous tokens / bare
+    # non-finite literals — enforced across all parametrized variants, not just
+    # one example.
+    for token in ["__import__", "eval(", "exec(", "os.system", "open(",
+                  " inf", "=inf", " nan", "=nan"]:
+        assert token not in code, f"dangerous token {token!r} in:\n{code}"
     return code
 
 

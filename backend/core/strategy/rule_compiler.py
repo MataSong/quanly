@@ -32,6 +32,7 @@ Pure module — NO Django imports; unit-testable without a DB.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -79,10 +80,20 @@ def _as_number(value: Any, field: str, *, kind: str = "float") -> float | int:
         raise ValueError(f"字段 {field} 不能为空字符串")
     try:
         if kind == "int":
-            return int(value)
-        return float(value)
-    except (TypeError, ValueError):
+            n: float | int = int(value)
+        else:
+            n = float(value)
+    except (TypeError, ValueError, OverflowError):
         raise ValueError(f"字段 {field} 必须是数字, 收到非法值: {value!r}")
+    # Reject non-finite floats (inf / -inf / nan, including "1e400" → inf).
+    # Without this, float("inf") passes the numeric gate and repr() emits the
+    # bare identifier `inf`/`nan` into generated source — it compiles and passes
+    # AST but raises NameError at runtime (swallowed by on_tick's try/except →
+    # silent strategy failure). This preserves the anti-injection invariant that
+    # any non-real-number payload must fail at coercion.
+    if not math.isfinite(n):
+        raise ValueError(f"字段 {field} 必须是有限数字, 收到: {value!r}")
+    return n
 
 
 def _validate_operand(operand: Any, side: str) -> None:
