@@ -44,7 +44,19 @@
 
     <!-- 新建密钥 dialog -->
     <el-dialog v-model="createVisible" :title="t('credentials.create')" :width="dialogWidth" destroy-on-close>
+      <el-alert
+        :title="t('credentials.form.exchangeHint')"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px"
+      />
       <el-form label-width="110px" :label-position="isMobile ? 'top' : 'right'">
+        <el-form-item :label="t('credentials.form.exchange')">
+          <el-select v-model="form.exchange" style="width: 100%;">
+            <el-option label="OKX" value="okx" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('credentials.form.env')">
           <el-select v-model="form.env" style="width: 100%;">
             <el-option :label="t('credentials.envSim')" value="sim" />
@@ -113,12 +125,14 @@ const saving = ref(false);
 const createVisible = ref(false);
 
 const form = reactive<{
+  exchange: string;
   env: "sim" | "live";
   label: string;
   api_key: string;
   secret: string;
   passphrase: string;
 }>({
+  exchange: "okx",  // 目前仅 OKX;前端展示字段,提交时不传后端(后端只对接 OKX)
   env: "sim",
   label: "",
   api_key: "",
@@ -143,7 +157,7 @@ async function reload() {
 }
 
 function openCreate() {
-  Object.assign(form, { env: "sim", label: "", api_key: "", secret: "", passphrase: "" });
+  Object.assign(form, { exchange: "okx", env: "sim", label: "", api_key: "", secret: "", passphrase: "" });
   createVisible.value = true;
 }
 
@@ -166,7 +180,9 @@ async function onCreate() {
   }
   saving.value = true;
   try {
-    await createCredential({ ...form });
+    // exchange 是前端展示字段(目前仅 OKX),不提交后端(后端只对接 OKX)
+    const { exchange: _exchange, ...payload } = form;
+    await createCredential(payload);
     ElMessage.success(t("credentials.createSuccess"));
     createVisible.value = false;
     await reload();

@@ -263,6 +263,8 @@ const en: typeof zh = {
       actions: "Actions",
     },
     form: {
+      exchange: "Exchange",
+      exchangeHint: "Only OKX is supported for now; more exchanges will be added later.",
       env: "Environment",
       label: "Label",
       labelPlaceholder: "e.g. main-sim",

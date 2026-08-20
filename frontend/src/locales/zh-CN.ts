@@ -261,6 +261,8 @@ export default {
       actions: "操作",
     },
     form: {
+      exchange: "交易所",
+      exchangeHint: "目前仅支持 OKX 交易所,后续将陆续接入更多交易所。",
       env: "环境",
       label: "标签",
       labelPlaceholder: "如：主账号-模拟",
