@@ -165,7 +165,7 @@
           </el-select>
         </el-form-item>
         <el-form-item
-          v-else-if="editingId && form.source_type !== 'code'"
+          v-else-if="editingId && form.source_type === 'uploaded'"
           :label="t('strategy.template')"
         >
           <span class="form-readonly">{{ form.template_ref }}</span>

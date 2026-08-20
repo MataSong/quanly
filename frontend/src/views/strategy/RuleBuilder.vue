@@ -411,12 +411,12 @@ function removeCond(group: "buy" | "sell", idx: number) {
 // ── Emit clean rule_config ────────────────────────────────────────────────────
 function cleanOperand(op: LocalOperand): Operand {
   const out: Operand = { ind: op.ind };
-  if (hasPeriod(op.ind)) out.period = op.period;
+  if (hasPeriod(op.ind)) out.period = op.period ?? 14;
   if (op.ind === "MACD") {
-    out.fast = op.fast;
-    out.slow = op.slow;
-    out.signal = op.signal;
-    out.line = op.line;
+    out.fast = op.fast ?? 12;
+    out.slow = op.slow ?? 26;
+    out.signal = op.signal ?? 9;
+    out.line = op.line ?? "macd";
   }
   return out;
 }
@@ -440,7 +440,7 @@ function buildConfig(): RuleConfig {
     buy: cleanGroup(local.buy),
     sell: cleanGroup(local.sell),
     risk,
-    sz: local.sz,
+    sz: local.sz?.trim() ? local.sz.trim() : "0.001",
   };
 }
 
