@@ -43,7 +43,7 @@
         <!-- Check status (code strategies only) -->
         <template #cell-check_status="{ row }">
           <el-tag
-            v-if="row.source_type === 'code' && row.check_status"
+            v-if="['code','visual'].includes(row.source_type ?? '') && row.check_status"
             :type="checkTagType(row.check_status)"
             size="small"
           >
@@ -60,9 +60,9 @@
               {{ t("common.edit") }}
             </el-button>
 
-            <!-- Re-check (code strategies) -->
+            <!-- Re-check (code / visual strategies) -->
             <el-button
-              v-if="row.source_type === 'code'"
+              v-if="['code','visual'].includes(row.source_type ?? '')"
               size="small"
               :loading="checkingId === row.id"
               @click.stop="onCheck(row as Strategy)"
@@ -138,6 +138,7 @@
           <el-radio-group v-model="form.source_type">
             <el-radio-button value="uploaded">{{ t("strategy.sourceUploaded") }}</el-radio-button>
             <el-radio-button value="code">{{ t("strategy.sourceCode") }}</el-radio-button>
+            <el-radio-button value="visual">{{ t("strategy.sourceVisual") }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
 
@@ -228,6 +229,13 @@
           </el-form-item>
         </template>
 
+        <!-- ── Visual rule builder ── -->
+        <template v-if="form.source_type === 'visual'">
+          <el-form-item :label="t('strategy.sourceVisual')">
+            <RuleBuilder v-model="form.rule_config" />
+          </el-form-item>
+        </template>
+
         <!-- Visibility -->
         <el-form-item :label="t('strategy.visibility')">
           <el-radio-group v-model="form.visibility">
@@ -236,9 +244,9 @@
           </el-radio-group>
         </el-form-item>
 
-        <!-- Check result (code strategies, after create/check) -->
+        <!-- Check result (code / visual strategies, after create/check) -->
         <el-form-item
-          v-if="form.source_type === 'code' && checkStatus"
+          v-if="['code','visual'].includes(form.source_type) && checkStatus"
           :label="t('strategy.checkResultTitle')"
         >
           <div class="check-panel">
@@ -282,7 +290,7 @@
       <template #footer>
         <el-button @click="dialogVisible = false">{{ t("common.cancel") }}</el-button>
         <el-button
-          v-if="form.source_type === 'code' && editingId"
+          v-if="['code','visual'].includes(form.source_type) && editingId"
           :loading="checkingId === editingId"
           @click="onCheckCurrent"
         >
@@ -315,11 +323,22 @@ import { formatApiError } from "@/utils/errors";
 import { paramLabel } from "@/utils/paramLabel";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue";
+import RuleBuilder, { type RuleConfig } from "./RuleBuilder.vue";
 
 const { t } = useI18n();
 const { isMobile } = useBreakpoint();
 
 const dialogWidth = computed(() => (isMobile.value ? "92%" : "520px"));
+
+/** 空白可视化规则(买入 and 组、卖出 or 组、无风控、默认下单量)。 */
+function emptyRuleConfig(): RuleConfig {
+  return {
+    buy: { logic: "and", conditions: [] },
+    sell: { logic: "or", conditions: [] },
+    risk: {},
+    sz: "0.001",
+  };
+}
 
 // ── My strategies ─────────────────────────────────────────────────────────────
 
@@ -376,12 +395,13 @@ const formRef = ref<FormInstance>();
 
 const form = reactive<{
   name: string;
-  source_type: "uploaded" | "code";
+  source_type: "uploaded" | "code" | "visual";
   template_ref: string;
   description: string;
   visibility: "private" | "public";
   params: Record<string, unknown>;
   code: string;
+  rule_config: RuleConfig;
 }>({
   name: "",
   source_type: "uploaded",
@@ -390,6 +410,7 @@ const form = reactive<{
   visibility: "private",
   params: {},
   code: "",
+  rule_config: emptyRuleConfig(),
 });
 
 const CODE_EXAMPLE = `def on_tick(ctx, params):
@@ -445,6 +466,7 @@ function openCreate() {
   form.visibility = "private";
   form.params = {};
   form.code = "";
+  form.rule_config = emptyRuleConfig();
   resetCheck();
   loadTemplates();
   dialogVisible.value = true;
@@ -453,12 +475,14 @@ function openCreate() {
 function openEdit(row: Strategy) {
   editingId.value = row.id;
   form.name = row.name ?? "";
-  form.source_type = row.source_type === "code" ? "code" : "uploaded";
+  form.source_type =
+    row.source_type === "code" ? "code" : row.source_type === "visual" ? "visual" : "uploaded";
   form.template_ref = row.template_ref ?? row.code_ref ?? "";
   form.description = row.description ?? "";
   form.visibility = row.visibility ?? "private";
   form.params = row.params ? { ...row.params } : {};
   form.code = row.code ?? "";
+  form.rule_config = (row.rule_config as RuleConfig | undefined) ?? emptyRuleConfig();
   setCheck(row);
   loadTemplates();
   dialogVisible.value = true;
@@ -474,6 +498,13 @@ async function onSave() {
           ? {
               name: form.name,
               code: form.code,
+              description: form.description,
+              visibility: form.visibility,
+            }
+          : form.source_type === "visual"
+          ? {
+              name: form.name,
+              rule_config: form.rule_config as unknown as Record<string, unknown>,
               description: form.description,
               visibility: form.visibility,
             }
@@ -495,6 +526,19 @@ async function onSave() {
       });
       setCheck(created);
       // 创建即同步跑检测:留在对话框内展示结果,让用户看到检测报告
+      ElMessage.success(t("common.success"));
+      await load();
+      return;
+    } else if (form.source_type === "visual") {
+      const created = await createStrategy({
+        name: form.name,
+        source_type: "visual",
+        rule_config: form.rule_config as unknown as Record<string, unknown>,
+        description: form.description,
+        visibility: form.visibility,
+      });
+      setCheck(created);
+      // visual 同样在创建时跑检测:留在对话框内展示结果
       ElMessage.success(t("common.success"));
       await load();
       return;
@@ -532,7 +576,7 @@ function resetCheck() {
 }
 
 function setCheck(row: Strategy) {
-  if (row.source_type === "code") {
+  if (["code", "visual"].includes(row.source_type ?? "")) {
     checkStatus.value = row.check_status ?? "";
     checkReport.value = row.check_report ?? null;
   } else {
@@ -623,9 +667,9 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** code 策略需 check_status==passed 才能提交;非 code 策略不受限 */
+/** code / visual 策略需 check_status==passed 才能提交;其他策略不受限 */
 function canSubmit(row: Strategy): boolean {
-  if (row.source_type === "code") return row.check_status === "passed";
+  if (["code", "visual"].includes(row.source_type ?? "")) return row.check_status === "passed";
   return true;
 }
 

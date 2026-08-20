@@ -18,8 +18,9 @@ export interface Strategy {
   description?: string;
   reject_reason?: string;
   updated_at?: string;
-  source_type?: "builtin" | "uploaded" | "code";
+  source_type?: "builtin" | "uploaded" | "code" | "visual";
   code?: string;
+  rule_config?: Record<string, unknown>;
   check_status?: "pending" | "passed" | "failed";
   check_report?: Record<string, unknown>;
   performance?: StrategyPerformance;
@@ -34,10 +35,11 @@ export interface StrategyPerformance {
 
 export interface CreateStrategyPayload {
   name: string;
-  source_type?: "uploaded" | "code";
+  source_type?: "uploaded" | "code" | "visual";
   template_ref?: string;
   params?: Record<string, unknown>;
   code?: string;
+  rule_config?: Record<string, unknown>;
   description?: string;
   visibility?: "private" | "public";
 }
