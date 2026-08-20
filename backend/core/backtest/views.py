@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 
 from core.accounts.drf import HasRequiredPermissions, require_perm
 from core.backtest.models import Backtest, BacktestTrade
-from core.strategy.models import Strategy
+from core.strategy.views import _runnable_qs
 
 logger = logging.getLogger("quanly.backtest")
 
@@ -113,7 +113,10 @@ class BacktestListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        strategy = get_object_or_404(Strategy, pk=strategy_id)
+        # 放开到所有 source_type(内置/uploaded/code/visual),但收口越权:
+        # 只能回测 _runnable_qs 里的策略(approved 公开 | 自己的 | 内置),
+        # 取不到 → 404(不能回测他人私有策略)。
+        strategy = get_object_or_404(_runnable_qs(request.user), pk=strategy_id)
 
         try:
             init_cash = float(init_cash)

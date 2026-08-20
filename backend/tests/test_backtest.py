@@ -495,3 +495,228 @@ def test_run_backtest_task_trades_persisted():
     sides = set(trades.values_list("side", flat=True))
     assert "buy" in sides
     assert "sell" in sides
+
+
+# ---------------------------------------------------------------------------
+# 5. VB-T3: controlled-exec code/visual backtest
+# ---------------------------------------------------------------------------
+
+def _ramp_candles(prices: list[float], start_ts: int = 1_000_000, step: int = 60_000) -> list[dict]:
+    """Build simple candles where open == close == given price for each bar."""
+    out = []
+    t = start_ts
+    for p in prices:
+        out.append(_candle(t, p, p, p, p))
+        t += step
+    return out
+
+
+# A minimal user on_tick: buy 0.01 the first time price crosses above 100; then hold.
+_CODE_BREAKOUT = '''
+_bought = False
+
+
+def on_tick(ctx, params):
+    global _bought
+    closes = [float(c["c"]) for c in ctx.candles()]
+    if not closes:
+        return
+    if not _bought and closes[-1] > 100.0:
+        ctx.buy(0.01)
+        _bought = True
+'''
+
+
+def test_engine_code_strategy_runs():
+    """A source_type=code on_tick runs through controlled exec and produces results."""
+    from core.backtest.engine import run
+
+    # flat at 100, then break above 100 → one buy, plus a next bar to fill against.
+    candles = _ramp_candles([100.0] * 5 + [150.0, 150.0, 150.0])
+    result = run("user_code", {}, candles, code=_CODE_BREAKOUT)
+
+    assert result["equity_curve"], "equity_curve must be non-empty"
+    buys = [t for t in result["trades"] if t["side"] == "buy"]
+    assert buys, "expected at least one buy trade from code strategy"
+    assert "total_return" in result["metrics"]
+
+
+# A code strategy with module-level position + take-profit → must trigger a sell,
+# proving module-level state persists across bars (same on_tick object per loop).
+_CODE_TP = '''
+_pos = 0.0
+_entry = 0.0
+
+
+def on_tick(ctx, params):
+    global _pos, _entry
+    closes = [float(c["c"]) for c in ctx.candles()]
+    if not closes:
+        return
+    price = closes[-1]
+    if _pos <= 0:
+        ctx.buy(0.01)
+        _pos = 0.01
+        _entry = price
+        return
+    # take-profit: +20% → sell all
+    if _entry > 0 and (price - _entry) / _entry >= 0.20:
+        ctx.sell(_pos)
+        _pos = 0.0
+        _entry = 0.0
+'''
+
+
+def test_engine_code_module_state_persists_across_bars():
+    """Module-level _pos/_entry persist across bars → take-profit sell fires."""
+    from core.backtest.engine import run
+
+    # buy at 100, then price rallies well above +20% → sell.
+    candles = _ramp_candles([100.0, 100.0, 130.0, 130.0, 130.0])
+    result = run("user_code", {}, candles, code=_CODE_TP)
+
+    buys = [t for t in result["trades"] if t["side"] == "buy"]
+    sells = [t for t in result["trades"] if t["side"] == "sell"]
+    assert buys, "expected a buy trade"
+    assert sells, "expected a take-profit sell (module-level state must persist)"
+
+
+def test_engine_visual_compiled_product_runs():
+    """A rule_compiler product (visual) runs through controlled exec end-to-end."""
+    from core.backtest.engine import run
+    from core.strategy.rule_compiler import compile_rule
+
+    cfg = {
+        "buy": {
+            "logic": "and",
+            "conditions": [
+                {"op": "cross_above",
+                 "left": {"ind": "MA", "period": 5},
+                 "right": {"ind": "MA", "period": 20}},
+            ],
+        },
+        "risk": {"take_profit_pct": 5},
+        "sz": 0.01,
+    }
+    code = compile_rule(cfg)
+
+    # long flat baseline (enough bars for MA20) then a strong uptrend to force a
+    # golden cross (MA5 crossing above MA20), then a further rally for take-profit.
+    prices = [100.0] * 30
+    prices += [float(100 + i * 10) for i in range(1, 15)]  # rally
+    candles = _ramp_candles(prices)
+
+    result = run("visual", {}, candles, code=code)
+    assert result["equity_curve"], "visual backtest equity_curve must be non-empty"
+    buys = [t for t in result["trades"] if t["side"] == "buy"]
+    sells = [t for t in result["trades"] if t["side"] == "sell"]
+    assert buys, "expected a buy from the compiled MA cross rule"
+    # take-profit at +5% on a strong rally should also produce a sell.
+    assert sells, "expected a take-profit sell from the compiled risk block"
+
+
+def test_engine_builtin_not_regressed_when_code_none():
+    """code=None still routes through the builtin importlib path (no regression)."""
+    from core.backtest.engine import run
+
+    candles = _build_crossover_candles()
+    result = run(
+        "dual_ma", {"fast_period": 3, "slow_period": 5, "sz": "0.01"}, candles,
+        code=None,
+    )
+    buys = [t for t in result["trades"] if t["side"] == "buy"]
+    sells = [t for t in result["trades"] if t["side"] == "sell"]
+    assert buys and sells, "builtin dual_ma backtest must still work with code=None"
+
+
+def test_engine_controlled_exec_blocks_disallowed_import():
+    """Defence-in-depth: importing a non-whitelisted module fails at exec time."""
+    from core.backtest.engine import run
+
+    bad_code = "import os\n\n\ndef on_tick(ctx, params):\n    pass\n"
+    candles = _ramp_candles([100.0, 100.0, 100.0])
+    with pytest.raises(ImportError):
+        run("user_code", {}, candles, code=bad_code)
+
+
+# ---------------------------------------------------------------------------
+# 6. VB-T3: backtest create — open to all source_types + multi-tenant lockdown
+# ---------------------------------------------------------------------------
+
+def _owned_code_strategy(owner, visibility=Strategy.VISIBILITY_PRIVATE, status=Strategy.STATUS_DRAFT) -> Strategy:
+    return Strategy.objects.create(
+        name="my code",
+        source_type=Strategy.SOURCE_CODE,
+        code_ref="user_code",
+        code=_CODE_BREAKOUT,
+        is_builtin=False,
+        owner=owner,
+        visibility=visibility,
+        status=status,
+    )
+
+
+@pytest.mark.django_db
+def test_create_backtest_own_code_strategy_201(api_client):
+    """User can backtest their own private code strategy → 201."""
+    user = _make_user("bt_own_code", ["backtest:create"])
+    strategy = _owned_code_strategy(user)
+    api_client.force_authenticate(user)
+    with patch("core.backtest.tasks.run_backtest.apply_async"):
+        resp = api_client.post("/api/backtest/backtests", {
+            "strategy_id": strategy.pk,
+            "symbol": "BTC-USDT", "bar": "1m",
+            "start_ts": 1_000_000, "end_ts": 2_000_000,
+        }, format="json")
+    assert resp.status_code == 201
+
+
+@pytest.mark.django_db
+def test_create_backtest_other_users_private_strategy_404(api_client):
+    """Backtesting another user's private strategy → 404 (越权收口)."""
+    owner = _make_user("bt_owner")
+    attacker = _make_user("bt_attacker", ["backtest:create"])
+    strategy = _owned_code_strategy(owner)  # private, owned by someone else
+
+    api_client.force_authenticate(attacker)
+    with patch("core.backtest.tasks.run_backtest.apply_async") as mock_async:
+        resp = api_client.post("/api/backtest/backtests", {
+            "strategy_id": strategy.pk,
+            "symbol": "BTC-USDT", "bar": "1m",
+            "start_ts": 1_000_000, "end_ts": 2_000_000,
+        }, format="json")
+    assert resp.status_code == 404
+    assert not mock_async.called
+
+
+@pytest.mark.django_db
+def test_create_backtest_approved_public_strategy_201(api_client):
+    """Any user can backtest an approved public strategy → 201."""
+    owner = _make_user("bt_pub_owner")
+    user = _make_user("bt_pub_user", ["backtest:create"])
+    strategy = _owned_code_strategy(
+        owner, visibility=Strategy.VISIBILITY_PUBLIC, status=Strategy.STATUS_APPROVED
+    )
+    api_client.force_authenticate(user)
+    with patch("core.backtest.tasks.run_backtest.apply_async"):
+        resp = api_client.post("/api/backtest/backtests", {
+            "strategy_id": strategy.pk,
+            "symbol": "BTC-USDT", "bar": "1m",
+            "start_ts": 1_000_000, "end_ts": 2_000_000,
+        }, format="json")
+    assert resp.status_code == 201
+
+
+@pytest.mark.django_db
+def test_create_backtest_builtin_strategy_201(api_client):
+    """Builtin strategy (owner is null) is runnable by anyone → 201."""
+    user = _make_user("bt_builtin_user", ["backtest:create"])
+    strategy = _make_strategy()  # builtin, owner=None
+    api_client.force_authenticate(user)
+    with patch("core.backtest.tasks.run_backtest.apply_async"):
+        resp = api_client.post("/api/backtest/backtests", {
+            "strategy_id": strategy.pk,
+            "symbol": "BTC-USDT", "bar": "1m",
+            "start_ts": 1_000_000, "end_ts": 2_000_000,
+        }, format="json")
+    assert resp.status_code == 201

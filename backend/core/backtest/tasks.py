@@ -27,6 +27,7 @@ def run_backtest(self, backtest_id: int) -> None:
     """
     # Model imports stay lazy to avoid Django app-registry issues at import time.
     from core.backtest.models import Backtest, BacktestTrade
+    from core.strategy.models import Strategy
 
     try:
         bt = Backtest.objects.select_related("strategy").get(pk=backtest_id)
@@ -53,13 +54,21 @@ def run_backtest(self, backtest_id: int) -> None:
                 "(OKX unreachable or no data)."
             )
 
+        # code/visual 策略:code 字段存 Python 源码(用户上传或规则编译产物),
+        # 经受控 exec 跑;引擎优先用 code,builtin/uploaded 仍走 importlib(code_ref)。
+        strategy = bt.strategy
+        code = None
+        if strategy.source_type in (Strategy.SOURCE_CODE, Strategy.SOURCE_VISUAL):
+            code = strategy.code
+
         result = engine_run(
-            code_ref=bt.strategy.code_ref,
+            code_ref=strategy.code_ref,
             params=bt.params,
             candles=candles,
             init_cash=float(bt.init_cash),
             fee_rate=float(bt.fee_rate),
             bar=bt.bar,
+            code=code,
         )
 
         bt.equity_curve = result["equity_curve"]

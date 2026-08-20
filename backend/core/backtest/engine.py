@@ -14,6 +14,7 @@ from typing import Any
 
 from core.backtest.ctx import BacktestContext
 from core.backtest.metrics import compute_metrics
+from core.strategy import safe_exec
 
 logger = logging.getLogger("quanly.backtest")
 
@@ -25,11 +26,26 @@ _BUILTIN_MAP: dict[str, str] = {
 }
 
 
-def _load_on_tick(code_ref: str):
-    """Import and return the on_tick function for the given code_ref.
+def _load_on_tick(code_ref: str, code: str | None = None):
+    """Return the on_tick function for this strategy.
 
-    Raises ValueError for unknown code_refs.
+    If *code* is provided (source_type=code/visual: user Python source or a visual
+    rule_compiler product), run it through the controlled exec sandbox
+    (safe_exec.exec_strategy) and return the extracted on_tick.  The returned
+    on_tick holds its own exec namespace as __globals__, so module-level position
+    state (e.g. _pos/_entry emitted by rule_compiler) persists across bars because
+    the backtest loop calls the *same* on_tick object every bar.
+
+    Otherwise fall back to the builtin importlib registry keyed by *code_ref*.
+
+    Raises ValueError for unknown code_refs (builtin path only).
     """
+    if code:
+        # Controlled exec — pure compute, safe-builtins whitelist + import guard.
+        # This is a second line of defence; user code already passed AST checks
+        # at submission time. No credentials / no network / no real orders here.
+        return safe_exec.exec_strategy(code)
+
     module_path = _BUILTIN_MAP.get(code_ref)
     if module_path is None:
         raise ValueError(
@@ -47,13 +63,15 @@ def run(
     init_cash: float = 10_000.0,
     fee_rate: float = 0.001,
     bar: str = "1D",
+    code: str | None = None,
 ) -> dict[str, Any]:
     """Execute a backtest and return equity_curve, trades, and metrics.
 
     Parameters
     ----------
     code_ref:
-        Strategy identifier (e.g. "dual_ma").
+        Strategy identifier (e.g. "dual_ma"). Used for the builtin path when
+        *code* is not provided.
     params:
         Strategy parameters dict passed verbatim to on_tick.
     candles:
@@ -65,12 +83,16 @@ def run(
         Taker fee as a fraction (e.g. 0.001 = 0.1 %).
     bar:
         Timeframe string used only for annualisation in metrics.
+    code:
+        Optional user/visual Python source (source_type=code/visual). When set,
+        on_tick is loaded via the controlled exec sandbox instead of the builtin
+        importlib registry. Defaults to None to keep builtin callers unchanged.
 
     Returns
     -------
     dict with keys: equity_curve, trades, metrics
     """
-    on_tick = _load_on_tick(code_ref)
+    on_tick = _load_on_tick(code_ref, code)
 
     ctx = BacktestContext(candles)
     cash = float(init_cash)
