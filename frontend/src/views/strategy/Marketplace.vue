@@ -8,9 +8,20 @@
       </el-button>
     </div>
 
-    <!-- Filter tabs -->
+    <!-- Toolbar: search + filter -->
     <div class="filter-row">
-      <el-radio-group v-model="filter" size="small">
+      <el-input
+        v-model="search"
+        :placeholder="t('strategy.searchPlaceholder')"
+        clearable
+        size="small"
+        class="search-input"
+        @input="onSearchInput"
+        @clear="onFilterChange"
+      >
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <el-radio-group v-model="filter" size="small" @change="onFilterChange">
         <el-radio-button value="all">{{ t("strategy.filterAll") }}</el-radio-button>
         <el-radio-button value="builtin">{{ t("strategy.filterBuiltin") }}</el-radio-button>
         <el-radio-button value="user">{{ t("strategy.filterUserPublic") }}</el-radio-button>
@@ -19,9 +30,9 @@
 
     <!-- Cards grid -->
     <div v-loading="loading" class="cards-grid">
-      <el-empty v-if="!loading && filteredList.length === 0" :description="t('common.empty')" />
+      <el-empty v-if="!loading && list.length === 0" :description="t('common.empty')" />
       <div
-        v-for="item in filteredList"
+        v-for="item in list"
         :key="item.id"
         class="strategy-card"
         @click="openDetail(item)"
@@ -70,6 +81,19 @@
           </el-button>
         </div>
       </div>
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="total > pageSize" class="pagination-row">
+      <el-pagination
+        :current-page="page"
+        :page-size="pageSize"
+        :total="total"
+        :layout="isMobile ? 'prev, pager, next' : 'total, prev, pager, next'"
+        :small="isMobile"
+        background
+        @current-change="onPageChange"
+      />
     </div>
 
     <!-- Detail drawer -->
@@ -168,11 +192,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { User } from "@element-plus/icons-vue";
+import { User, Search } from "@element-plus/icons-vue";
 import { getMarketplace, getStrategyDetail, type Strategy } from "@/api/strategy";
 import { formatApiError } from "@/utils/errors";
 import { useBreakpoint } from "@/composables/useBreakpoint";
@@ -181,15 +205,27 @@ const { t } = useI18n();
 const router = useRouter();
 const { isMobile } = useBreakpoint();
 
-// ── Data ──────────────────────────────────────────────────────────────────────
+// ── Data + 分页/搜索/筛选(后端驱动) ────────────────────────────────────────────
 
 const list = ref<Strategy[]>([]);
 const loading = ref(false);
+const search = ref("");
+const filter = ref<"all" | "builtin" | "user">("all");
+const page = ref(1);
+const pageSize = ref(12);
+const total = ref(0);
 
 async function load() {
   loading.value = true;
   try {
-    list.value = await getMarketplace();
+    const res = await getMarketplace({
+      search: search.value.trim() || undefined,
+      filter: filter.value,
+      page: page.value,
+      page_size: pageSize.value,
+    });
+    list.value = res.results;
+    total.value = res.total;
   } catch (e) {
     ElMessage.error(formatApiError(e, "strategy"));
   } finally {
@@ -197,19 +233,31 @@ async function load() {
   }
 }
 
-// ── Filter ────────────────────────────────────────────────────────────────────
+// 搜索防抖(300ms):输入停顿后重置到第一页重新查
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    page.value = 1;
+    load();
+  }, 300);
+}
 
-const filter = ref<"all" | "builtin" | "user">("all");
+// filter 变化 / 清空搜索:重置到第一页
+function onFilterChange() {
+  page.value = 1;
+  load();
+}
+
+// 翻页
+function onPageChange(p: number) {
+  page.value = p;
+  load();
+}
 
 function isBuiltin(s: Strategy): boolean {
   return s.is_builtin || !s.owner_username;
 }
-
-const filteredList = computed<Strategy[]>(() => {
-  if (filter.value === "builtin") return list.value.filter(isBuiltin);
-  if (filter.value === "user") return list.value.filter((s) => !isBuiltin(s));
-  return list.value;
-});
 
 // ── Params display ────────────────────────────────────────────────────────────
 
@@ -276,6 +324,21 @@ onMounted(load);
 .filter-row {
   display: flex;
   align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.search-input {
+  width: 260px;
+
+  @include mobile {
+    width: 100%;
+  }
+}
+.pagination-row {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-5);
 }
 
 /* Cards grid — responsive auto-fill */

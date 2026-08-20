@@ -117,9 +117,25 @@ export async function getRunLogs(id: number): Promise<StrategyLog[]> {
 
 // ── 策略商城 API ────────────────────────────────────────────────────────────────
 
-/** GET /strategy/marketplace — 商城可用策略(公开审核过 + 内置 + 自己的) */
-export async function getMarketplace(): Promise<Strategy[]> {
-  const r = await http.get<Strategy[]>("/strategy/marketplace");
+export interface MarketplaceParams {
+  search?: string;
+  filter?: "all" | "builtin" | "user";
+  page?: number;
+  page_size?: number;
+}
+
+export interface Paginated<T> {
+  results: T[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** GET /strategy/marketplace — 商城分页+搜索+筛选(公开审核过+内置) */
+export async function getMarketplace(
+  params: MarketplaceParams = {},
+): Promise<Paginated<Strategy>> {
+  const r = await http.get<Paginated<Strategy>>("/strategy/marketplace", { params });
   return r.data;
 }
 

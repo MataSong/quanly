@@ -113,7 +113,7 @@ def test_marketplace_shows_builtin(api_client):
     api_client.force_authenticate(user)
     resp = api_client.get("/api/strategy/marketplace")
     assert resp.status_code == 200
-    ids = {s["id"] for s in resp.data}
+    ids = {s["id"] for s in resp.data["results"]}
     assert builtin.pk in ids
 
 
@@ -129,7 +129,7 @@ def test_marketplace_hides_own_private_draft(api_client):
     api_client.force_authenticate(user)
     resp = api_client.get("/api/strategy/marketplace")
     assert resp.status_code == 200
-    ids = {s["id"] for s in resp.data}
+    ids = {s["id"] for s in resp.data["results"]}
     assert own.pk not in ids  # 私有 draft 不在商城
     # 但在 /mine 可见
     mine = api_client.get("/api/strategy/mine")
@@ -150,7 +150,7 @@ def test_marketplace_shows_public_approved(api_client):
     api_client.force_authenticate(user)
     resp = api_client.get("/api/strategy/marketplace")
     assert resp.status_code == 200
-    ids = {s["id"] for s in resp.data}
+    ids = {s["id"] for s in resp.data["results"]}
     assert public_strat.pk in ids
 
 
@@ -168,7 +168,7 @@ def test_marketplace_hides_other_private(api_client):
     api_client.force_authenticate(user)
     resp = api_client.get("/api/strategy/marketplace")
     assert resp.status_code == 200
-    ids = {s["id"] for s in resp.data}
+    ids = {s["id"] for s in resp.data["results"]}
     assert private_strat.pk not in ids
 
 
@@ -968,7 +968,7 @@ def test_marketplace_excludes_own_draft_but_runnable_includes(api_client):
 
     # 商城:不含自己的 draft
     mkt = api_client.get("/api/strategy/marketplace")
-    mkt_ids = [s["id"] for s in mkt.data]
+    mkt_ids = [s["id"] for s in mkt.data["results"]]
     assert draft.id not in mkt_ids, "自己的 draft 不该出现在商城"
 
     # 运行可选(/strategies):含自己的 draft
@@ -990,4 +990,78 @@ def test_marketplace_excludes_own_pending(api_client):
     )
     api_client.force_authenticate(user)
     mkt = api_client.get("/api/strategy/marketplace")
-    assert pending.id not in [s["id"] for s in mkt.data], "pending 不该在商城"
+    assert pending.id not in [s["id"] for s in mkt.data["results"]], "pending 不该在商城"
+
+
+# ---------------------------------------------------------------------------
+# 分页 + 搜索 + 后端 filter
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_marketplace_pagination(api_client):
+    """分页:page_size 限制每页数量,total 正确,page 2 返剩余。"""
+    other = _make_user("pg_other")
+    for i in range(15):
+        _make_user_strategy(
+            other, name=f"Pub {i:02d}",
+            visibility=Strategy.VISIBILITY_PUBLIC, status=Strategy.STATUS_APPROVED,
+        )
+    user = _make_user("pg_u", ["strategy:view"])
+    api_client.force_authenticate(user)
+    r1 = api_client.get("/api/strategy/marketplace?page=1&page_size=10")
+    assert r1.status_code == 200
+    assert len(r1.data["results"]) == 10
+    assert r1.data["total"] == 15
+    assert r1.data["page"] == 1
+    r2 = api_client.get("/api/strategy/marketplace?page=2&page_size=10")
+    assert len(r2.data["results"]) == 5
+    # 无重叠
+    ids1 = {s["id"] for s in r1.data["results"]}
+    ids2 = {s["id"] for s in r2.data["results"]}
+    assert not (ids1 & ids2)
+
+
+@pytest.mark.django_db
+def test_marketplace_search(api_client):
+    """搜索:匹配 name/description,大小写不敏感;不匹配不返。"""
+    other = _make_user("srch_other")
+    _make_user_strategy(other, name="Golden Cross MA", visibility=Strategy.VISIBILITY_PUBLIC, status=Strategy.STATUS_APPROVED)
+    hit_desc = _make_user_strategy(other, name="Foo", visibility=Strategy.VISIBILITY_PUBLIC, status=Strategy.STATUS_APPROVED)
+    hit_desc.description = "uses RSI oscillator"; hit_desc.save()
+    _make_user_strategy(other, name="Bar Baz", visibility=Strategy.VISIBILITY_PUBLIC, status=Strategy.STATUS_APPROVED)
+    user = _make_user("srch_u", ["strategy:view"])
+    api_client.force_authenticate(user)
+    # 名称匹配(大小写不敏感)
+    r = api_client.get("/api/strategy/marketplace?search=golden")
+    names = [s["name"] for s in r.data["results"]]
+    assert "Golden Cross MA" in names
+    assert "Bar Baz" not in names
+    # 描述匹配
+    r2 = api_client.get("/api/strategy/marketplace?search=rsi")
+    assert "Foo" in [s["name"] for s in r2.data["results"]]
+
+
+@pytest.mark.django_db
+def test_marketplace_filter_backend(api_client):
+    """后端 filter:builtin 只返内置;user 只返用户公开。"""
+    _builtin_strategy()
+    other = _make_user("flt_other")
+    _make_user_strategy(other, name="UserPub", visibility=Strategy.VISIBILITY_PUBLIC, status=Strategy.STATUS_APPROVED)
+    user = _make_user("flt_u", ["strategy:view"])
+    api_client.force_authenticate(user)
+    rb = api_client.get("/api/strategy/marketplace?filter=builtin")
+    assert all(s["owner_username"] == "" for s in rb.data["results"])  # 内置 owner 空
+    ru = api_client.get("/api/strategy/marketplace?filter=user")
+    assert all(s["owner_username"] != "" for s in ru.data["results"])  # 用户策略有 owner
+
+
+@pytest.mark.django_db
+def test_marketplace_bad_params_fallback(api_client):
+    """非法分页参数兜底默认,不 500。"""
+    _builtin_strategy()
+    user = _make_user("bad_u", ["strategy:view"])
+    api_client.force_authenticate(user)
+    r = api_client.get("/api/strategy/marketplace?page=abc&page_size=xyz")
+    assert r.status_code == 200
+    assert r.data["page"] == 1
+    assert r.data["page_size"] == 12

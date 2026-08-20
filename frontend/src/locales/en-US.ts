@@ -375,6 +375,7 @@ const en: typeof zh = {
     filterAll: "All",
     filterBuiltin: "Built-in",
     filterUserPublic: "Community",
+    searchPlaceholder: "Search name / description",
     builtinTag: "Built-in",
     userTag: "User",
     useStrategy: "Use this strategy",

@@ -373,6 +373,7 @@ export default {
     filterAll: "全部",
     filterBuiltin: "内置",
     filterUserPublic: "用户公开",
+    searchPlaceholder: "搜索策略名称/描述",
     builtinTag: "内置",
     userTag: "用户",
     useStrategy: "使用此策略",

@@ -210,14 +210,50 @@ class StrategyListView(APIView):
 # ---------------------------------------------------------------------------
 
 class MarketplaceListView(APIView):
-    """GET /api/strategy/marketplace — public+approved strategies + own + builtin."""
+    """GET /api/strategy/marketplace?search=&filter=&page=&page_size=
+
+    商城分页 + 搜索 + 筛选。返回分页信封 {results, total, page, page_size}。
+    filter: all(默认) | builtin(内置 owner=None) | user(用户公开 owner 非空)。
+    search: 匹配 name / description(大小写不敏感)。
+    """
 
     permission_classes = [IsAuthenticated, HasRequiredPermissions]
     required_permissions = ["strategy:view"]
 
     def get(self, request):
+        search = (request.query_params.get("search") or "").strip()
+        flt = request.query_params.get("filter") or "all"
+
+        def _int(name, default, lo, hi):
+            try:
+                v = int(request.query_params.get(name, default))
+            except (TypeError, ValueError):
+                return default
+            return max(lo, min(v, hi))
+
+        page = _int("page", 1, 1, 10_000_000)
+        page_size = _int("page_size", 12, 1, 50)
+
         qs = _marketplace_qs(request.user)
-        return Response(_serialize_many(qs, request))
+        if flt == "builtin":
+            qs = qs.filter(owner__isnull=True)
+        elif flt == "user":
+            qs = qs.filter(owner__isnull=False)
+        if search:
+            qs = qs.filter(Q(name__icontains=search) | Q(description__icontains=search))
+        # 稳定排序,保证分页确定(内置 owner=None 排前,再按 name)
+        qs = qs.order_by("name", "id")
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        results = qs[offset:offset + page_size]
+
+        return Response({
+            "results": _serialize_many(results, request),
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        })
 
 
 class MyStrategiesListView(APIView):

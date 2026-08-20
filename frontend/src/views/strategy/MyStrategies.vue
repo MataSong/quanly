@@ -345,8 +345,9 @@ async function loadTemplates() {
   if (templates.value.length) return;
   templatesLoading.value = true;
   try {
-    const all = await getMarketplace();
-    templates.value = all.filter((s) => s.is_builtin || !s.owner_username);
+    // 内置模板供选:filter=builtin,内置数量少,一页(50)足够。
+    const res = await getMarketplace({ filter: "builtin", page_size: 50 });
+    templates.value = res.results.filter((s) => s.is_builtin || !s.owner_username);
   } catch (e) {
     ElMessage.error(formatApiError(e, "strategy"));
   } finally {
