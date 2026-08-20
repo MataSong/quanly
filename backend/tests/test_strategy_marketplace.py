@@ -118,8 +118,11 @@ def test_marketplace_shows_builtin(api_client):
 
 
 @pytest.mark.django_db
-def test_marketplace_shows_own_private(api_client):
-    """GET /marketplace: own private strategies are visible."""
+def test_marketplace_hides_own_private_draft(api_client):
+    """GET /marketplace: 自己的私有 draft 策略【不】出现在商城(未审核上架)。
+    (修复 bug:此前 owner=self 无条件进商城,导致未提交的 draft 也显示。)
+    自己的策略在"我的策略"页(/mine)和运行列表(/strategies)可见,不在商城。
+    """
     _builtin_strategy()
     user = _make_user("mp_u2", ["strategy:view"])
     own = _make_user_strategy(user, name="My Private", visibility=Strategy.VISIBILITY_PRIVATE)
@@ -127,7 +130,10 @@ def test_marketplace_shows_own_private(api_client):
     resp = api_client.get("/api/strategy/marketplace")
     assert resp.status_code == 200
     ids = {s["id"] for s in resp.data}
-    assert own.pk in ids
+    assert own.pk not in ids  # 私有 draft 不在商城
+    # 但在 /mine 可见
+    mine = api_client.get("/api/strategy/mine")
+    assert own.pk in {s["id"] for s in mine.data}
 
 
 @pytest.mark.django_db
@@ -944,3 +950,44 @@ def test_update_code_strategy_reruns_check(api_client, monkeypatch):
     strat.refresh_from_db()
     assert "import os" in strat.code          # code 真的改了
     assert strat.check_status == "failed"     # 重跑了检测
+
+
+@pytest.mark.django_db
+def test_marketplace_excludes_own_draft_but_runnable_includes(api_client):
+    """BUG修复:商城(/marketplace)不含自己未上架draft;运行选策略(/strategies)含自己全部。"""
+    from core.strategy.models import Strategy
+
+    _builtin_strategy()
+    user = _make_user("mkt_draft", ["strategy:view"])
+    draft = Strategy.objects.create(
+        owner=user, name="My Draft", source_type=Strategy.SOURCE_UPLOADED,
+        code_ref="dual_ma", template_ref="dual_ma",
+        status=Strategy.STATUS_DRAFT, visibility=Strategy.VISIBILITY_PRIVATE,
+    )
+    api_client.force_authenticate(user)
+
+    # 商城:不含自己的 draft
+    mkt = api_client.get("/api/strategy/marketplace")
+    mkt_ids = [s["id"] for s in mkt.data]
+    assert draft.id not in mkt_ids, "自己的 draft 不该出现在商城"
+
+    # 运行可选(/strategies):含自己的 draft
+    run_list = api_client.get("/api/strategy/strategies")
+    run_ids = [s["id"] for s in run_list.data]
+    assert draft.id in run_ids, "运行选策略应能选到自己的 draft"
+
+
+@pytest.mark.django_db
+def test_marketplace_excludes_own_pending(api_client):
+    """提交审核后(pending)也不该在商城出现(直到 approved)。"""
+    from core.strategy.models import Strategy
+
+    user = _make_user("mkt_pending", ["strategy:view"])
+    pending = Strategy.objects.create(
+        owner=user, name="My Pending", source_type=Strategy.SOURCE_UPLOADED,
+        code_ref="dual_ma", template_ref="dual_ma",
+        status=Strategy.STATUS_PENDING, visibility=Strategy.VISIBILITY_PUBLIC,
+    )
+    api_client.force_authenticate(user)
+    mkt = api_client.get("/api/strategy/marketplace")
+    assert pending.id not in [s["id"] for s in mkt.data], "pending 不该在商城"

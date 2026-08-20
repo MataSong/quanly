@@ -240,7 +240,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import { listCredentials, type Credential } from "@/api/credentials";
 import {
-  getMarketplace,
+  listStrategies,
   listRuns,
   createRun,
   startRun,
@@ -271,7 +271,7 @@ const strategiesLoading = ref(false);
 async function loadStrategies() {
   strategiesLoading.value = true;
   try {
-    strategies.value = await getMarketplace();
+    strategies.value = await listStrategies();
   } catch (e) {
     ElMessage.error(formatApiError(e, "strategy"));
   } finally {

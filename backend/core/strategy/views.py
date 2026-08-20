@@ -160,7 +160,21 @@ class StrategyLogSerializer(drf_serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 def _marketplace_qs(user):
-    """Return strategies visible to user: public+approved | own | builtin."""
+    """商城展示集合:内置 + 别人已审核上架(approved+public) + 自己已审核上架的。
+    ★不含自己的 draft/pending/rejected —— 那些只在"我的策略"页可见,
+    未提交/审核中的策略不该出现在商城(与 submit 弹窗"审核通过才出现"一致)。
+    """
+    return Strategy.objects.filter(
+        Q(status=Strategy.STATUS_APPROVED, visibility=Strategy.VISIBILITY_PUBLIC)
+        | Q(owner__isnull=True)
+    ).distinct()
+
+
+def _runnable_qs(user):
+    """运行可选集合:商城可用 + 自己的全部(含未上架 draft)。
+    自己的策略自己当然能跑/调试(run guard 已允许 owner==self),
+    故新建运行选策略时能选到自己未上架的策略。
+    """
     return Strategy.objects.filter(
         Q(status=Strategy.STATUS_APPROVED, visibility=Strategy.VISIBILITY_PUBLIC)
         | Q(owner=user)
@@ -181,13 +195,13 @@ def _serialize_many(qs, request):
 # ---------------------------------------------------------------------------
 
 class StrategyListView(APIView):
-    """GET /api/strategy/strategies — list available strategies (marketplace view)."""
+    """GET /api/strategy/strategies — 可运行策略集合(供新建运行选:商城可用+自己全部)。"""
 
     permission_classes = [IsAuthenticated, HasRequiredPermissions]
     required_permissions = ["strategy:view"]
 
     def get(self, request):
-        strategies = _marketplace_qs(request.user)
+        strategies = _runnable_qs(request.user)
         return Response(_serialize_many(strategies, request))
 
 
