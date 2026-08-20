@@ -211,7 +211,7 @@ def test_create_strategy_invalid_template_ref_400(api_client):
         "params": {},
     }, format="json")
     assert resp.status_code == 400
-    assert "template_ref" in resp.data["detail"]
+    assert "nonexistent_template" in resp.data["detail"]
 
 
 @pytest.mark.django_db

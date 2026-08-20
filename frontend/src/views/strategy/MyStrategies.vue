@@ -312,6 +312,7 @@ import {
   type Strategy,
 } from "@/api/strategy";
 import { formatApiError } from "@/utils/errors";
+import { paramLabel } from "@/utils/paramLabel";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue";
 
@@ -433,16 +434,6 @@ function onTemplateChange() {
   } else {
     form.params = {};
   }
-}
-
-/** Human-readable label for param keys (dual_ma special casing + generic fallback) */
-function paramLabel(key: string): string {
-  const map: Record<string, string> = {
-    fast_period: t("strategy.fastPeriod"),
-    slow_period: t("strategy.slowPeriod"),
-    sz: t("strategy.sz"),
-  };
-  return map[key] ?? key;
 }
 
 function openCreate() {

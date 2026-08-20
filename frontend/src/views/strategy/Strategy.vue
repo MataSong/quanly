@@ -159,20 +159,27 @@
           </template>
         </el-form-item>
 
-        <!-- dual_ma params — 仅内置策略可在运行页调参 -->
+        <!-- 策略参数 — 仅内置策略可在运行页调参,按所选策略参数动态渲染 -->
         <template v-if="showParamForm">
-          <el-form-item :label="t('strategy.fastPeriod')">
-            <el-input-number v-model="createForm.params.fast_period" :min="1" :max="200" style="width: 100%" />
-          </el-form-item>
-          <el-form-item :label="t('strategy.slowPeriod')">
-            <el-input-number v-model="createForm.params.slow_period" :min="1" :max="500" style="width: 100%" />
-          </el-form-item>
-          <el-form-item :label="t('strategy.sz')">
-            <el-input v-model="createForm.params.sz" placeholder="0.01" />
+          <el-form-item
+            v-for="(defVal, key) in paramFields"
+            :key="String(key)"
+            :label="paramLabel(String(key))"
+          >
+            <el-input-number
+              v-if="typeof defVal === 'number'"
+              v-model="(createForm.params as Record<string, unknown>)[String(key)] as number"
+              :min="0"
+              style="width: 100%"
+            />
+            <el-input
+              v-else
+              v-model="(createForm.params as Record<string, unknown>)[String(key)] as string"
+            />
           </el-form-item>
         </template>
         <!-- 用户参数化策略:参数已固化,运行页不可改 -->
-        <el-form-item v-else-if="isDualMa && !isBuiltinStrategy">
+        <el-form-item v-else-if="!isBuiltinStrategy && createForm.strategy_id != null">
           <div style="font-size: 12px; color: var(--gray-400)">
             {{ t('strategy.userParamsFixedHint') }}
           </div>
@@ -253,6 +260,7 @@ import {
 import { getSymbols, type Symbol as MarketSymbol } from "@/api/market";
 import { useStrategySocket } from "@/composables/useStrategySocket";
 import { formatApiError } from "@/utils/errors";
+import { paramLabel } from "@/utils/paramLabel";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue";
 
@@ -424,32 +432,32 @@ const selectedCred = computed<Credential | undefined>(() =>
   credentials.value.find((c) => c.id === createForm.credential_id),
 );
 
-const isDualMa = computed<boolean>(() => {
-  const s = strategies.value.find((s) => s.id === createForm.strategy_id);
-  return (
-    s?.code_ref === "dual_ma" ||
-    s?.template_ref === "dual_ma" ||
-    s?.name?.toLowerCase().includes("双均线") ||
-    false
-  );
-});
+const selectedStrategy = computed<Strategy | undefined>(() =>
+  strategies.value.find((s) => s.id === createForm.strategy_id),
+);
 
 // 选中的是否内置策略(owner 空/is_builtin)。用户参数化实例的参数已固化,
 // 运行时后端用 strategy.params,前端不应让用户在运行页改参(会误导:改了不生效)。
 const isBuiltinStrategy = computed<boolean>(() => {
-  const s = strategies.value.find((s) => s.id === createForm.strategy_id);
+  const s = selectedStrategy.value;
   return !!(s && (s.is_builtin || !s.owner_username));
 });
 
-// 仅内置策略允许在运行页编辑参数(用户策略参数在"我的策略"里编辑)。
-const showParamForm = computed<boolean>(() => isDualMa.value && isBuiltinStrategy.value);
+// 所选策略的参数字段(内置用 default_params,兜底 params)。运行页据此动态渲染表单。
+const paramFields = computed<Record<string, unknown>>(() => {
+  const s = selectedStrategy.value;
+  return (s?.default_params ?? s?.params ?? {}) as Record<string, unknown>;
+});
+
+// 仅内置策略且有可调参数时,允许在运行页编辑参数(用户策略参数在"我的策略"里编辑)。
+const showParamForm = computed<boolean>(
+  () => isBuiltinStrategy.value && Object.keys(paramFields.value).length > 0,
+);
 
 function onStrategyChange() {
-  const s = strategies.value.find((x) => x.id === createForm.strategy_id);
-  if (s?.default_params) {
-    // Merge defaults into form params
-    Object.assign(createForm.params, s.default_params);
-  }
+  const s = selectedStrategy.value;
+  // 切换策略时,用该策略的默认参数重置表单参数(避免残留上个策略的字段)。
+  createForm.params = s?.default_params ? { ...s.default_params } : {};
 }
 
 function openCreateDialog() {

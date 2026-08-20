@@ -285,7 +285,7 @@ class StrategyCreateView(APIView):
         source_type = (request.data.get("source_type") or Strategy.SOURCE_UPLOADED).strip()
 
         if not name:
-            return Response({"detail": "name is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "策略名称不能为空"}, status=status.HTTP_400_BAD_REQUEST)
 
         if visibility not in (Strategy.VISIBILITY_PRIVATE, Strategy.VISIBILITY_PUBLIC):
             visibility = Strategy.VISIBILITY_PRIVATE
@@ -295,7 +295,7 @@ class StrategyCreateView(APIView):
             code = request.data.get("code") or ""
             if not code.strip():
                 return Response(
-                    {"detail": "code is required for code-type strategies."},
+                    {"detail": "代码类型策略必须提供代码"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -330,12 +330,12 @@ class StrategyCreateView(APIView):
         params = request.data.get("params") or {}
 
         if not template_ref:
-            return Response({"detail": "template_ref is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "请选择内置模板"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate template_ref: must exist as a builtin strategy (owner=None)
         if not Strategy.objects.filter(owner__isnull=True, code_ref=template_ref).exists():
             return Response(
-                {"detail": f"Invalid template_ref '{template_ref}': no builtin strategy found."},
+                {"detail": f"无效的模板 '{template_ref}'"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -569,7 +569,7 @@ class AdminReviewView(APIView):
             strategy.save(update_fields=["status", "reject_reason", "updated_at"])
         else:
             return Response(
-                {"detail": "action must be 'approve' or 'reject'."},
+                {"detail": "操作必须是通过或驳回"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -607,7 +607,7 @@ class StrategyRunListCreateView(APIView):
 
         if not strategy_id or not symbol:
             return Response(
-                {"detail": "strategy_id and symbol are required."},
+                {"detail": "策略和交易对不能为空"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -692,7 +692,7 @@ class StrategyRunStartView(APIView):
 
         if run.status == StrategyRun.STATUS_RUNNING:
             return Response(
-                {"detail": "Run is already running."},
+                {"detail": "该运行已在进行中"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -701,7 +701,7 @@ class StrategyRunStartView(APIView):
         run_strategy.delay(run.pk)
         logger.info("strategy.run.start: enqueued run_strategy task for run=%s", run.pk)
 
-        return Response({"detail": "Start task enqueued.", "run_id": run.pk})
+        return Response({"detail": "启动任务已提交", "run_id": run.pk})
 
 
 class StrategyRunStopView(APIView):
@@ -716,7 +716,7 @@ class StrategyRunStopView(APIView):
 
         if run.status not in (StrategyRun.STATUS_RUNNING, StrategyRun.STATUS_PENDING):
             return Response(
-                {"detail": f"Cannot stop a run with status '{run.status}'."},
+                {"detail": f"无法停止状态为 '{run.status}' 的运行"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -725,7 +725,7 @@ class StrategyRunStopView(APIView):
         stop_strategy.delay(run.pk)
         logger.info("strategy.run.stop: enqueued stop_strategy task for run=%s", run.pk)
 
-        return Response({"detail": "Stop task enqueued.", "run_id": run.pk})
+        return Response({"detail": "停止任务已提交", "run_id": run.pk})
 
 
 class StrategyRunLogsView(APIView):

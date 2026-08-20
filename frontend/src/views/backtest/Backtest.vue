@@ -246,26 +246,23 @@
           />
         </el-form-item>
 
-        <!-- dual_ma params -->
-        <template v-if="isDualMa">
-          <el-form-item :label="t('strategy.fastPeriod')">
+        <!-- 策略参数 — 按所选策略参数动态渲染 -->
+        <template v-if="Object.keys(paramFields).length">
+          <el-form-item
+            v-for="(defVal, key) in paramFields"
+            :key="String(key)"
+            :label="paramLabel(String(key))"
+          >
             <el-input-number
-              v-model="(form.params as Record<string,number>).fast_period"
-              :min="1"
-              :max="200"
+              v-if="typeof defVal === 'number'"
+              v-model="(form.params as Record<string, unknown>)[String(key)] as number"
+              :min="0"
               style="width: 100%"
             />
-          </el-form-item>
-          <el-form-item :label="t('strategy.slowPeriod')">
-            <el-input-number
-              v-model="(form.params as Record<string,number>).slow_period"
-              :min="1"
-              :max="500"
-              style="width: 100%"
+            <el-input
+              v-else
+              v-model="(form.params as Record<string, unknown>)[String(key)] as string"
             />
-          </el-form-item>
-          <el-form-item :label="t('strategy.sz')">
-            <el-input v-model="(form.params as Record<string,unknown>).sz" placeholder="0.01" />
           </el-form-item>
         </template>
 
@@ -319,6 +316,7 @@ import {
 import { listStrategies, type Strategy } from "@/api/strategy";
 import { getSymbols, type Symbol as MarketSymbol } from "@/api/market";
 import { formatApiError } from "@/utils/errors";
+import { paramLabel } from "@/utils/paramLabel";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import ResponsiveTable, { type RTColumn } from "@/components/ResponsiveTable.vue";
 
@@ -539,16 +537,20 @@ const form = reactive<{
   fee_rate: 0.001,
 });
 
-const isDualMa = computed<boolean>(() => {
-  const s = strategies.value.find((s) => s.id === form.strategy_id);
-  return s?.code_ref === "dual_ma" || s?.name?.toLowerCase().includes("双均线") || false;
+const selectedStrategy = computed<Strategy | undefined>(() =>
+  strategies.value.find((s) => s.id === form.strategy_id),
+);
+
+// 所选策略的参数字段(default_params 兜底 params),据此动态渲染回测参数表单。
+const paramFields = computed<Record<string, unknown>>(() => {
+  const s = selectedStrategy.value;
+  return (s?.default_params ?? s?.params ?? {}) as Record<string, unknown>;
 });
 
 function onStrategyChange() {
-  const s = strategies.value.find((x) => x.id === form.strategy_id);
-  if (s?.default_params) {
-    Object.assign(form.params, s.default_params);
-  }
+  const s = selectedStrategy.value;
+  // 切换策略时用该策略默认参数重置(避免残留上个策略的字段)。
+  form.params = s?.default_params ? { ...s.default_params } : {};
 }
 
 function openCreateDialog() {

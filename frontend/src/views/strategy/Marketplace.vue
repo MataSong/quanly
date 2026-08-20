@@ -60,7 +60,7 @@
             v-for="(val, key) in displayParams(item)"
             :key="String(key)"
             class="param-chip"
-          >{{ key }}: {{ val }}</span>
+          >{{ paramLabel(String(key)) }}: {{ val }}</span>
         </div>
 
         <!-- Footer stats -->
@@ -130,14 +130,14 @@
 
         <!-- Params -->
         <div class="detail-section">
-          <div class="detail-label">{{ t("common.name") }} / Params</div>
+          <div class="detail-label">{{ t("strategy.paramsCol") }}</div>
           <div class="param-list">
             <div
               v-for="(val, key) in (detailStrategy.params || detailStrategy.default_params || {})"
               :key="String(key)"
               class="param-row"
             >
-              <span class="param-key">{{ key }}</span>
+              <span class="param-key">{{ paramLabel(String(key)) }}</span>
               <span class="param-val">{{ val }}</span>
             </div>
           </div>
@@ -169,7 +169,7 @@
                   :key="String(key)"
                   class="metric-row"
                 >
-                  <span class="metric-key">{{ key }}</span>
+                  <span class="metric-key">{{ metricLabel(String(key)) }}</span>
                   <span class="metric-val">{{ val }}</span>
                 </div>
               </div>
@@ -199,6 +199,7 @@ import { ElMessage } from "element-plus";
 import { User, Search } from "@element-plus/icons-vue";
 import { getMarketplace, getStrategyDetail, type Strategy } from "@/api/strategy";
 import { formatApiError } from "@/utils/errors";
+import { paramLabel, metricLabel } from "@/utils/paramLabel";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 
 const { t } = useI18n();

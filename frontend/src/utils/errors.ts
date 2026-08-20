@@ -11,5 +11,6 @@ export function formatApiError(e: unknown, ns: string, fallback?: string): strin
     const key = `${ns}.${code}`;
     if (i18n.global.te(key)) return t(key);
   }
-  return body?.message || (e as any)?.message || fallback || t("common.error");
+  // detail 是后端(DRF)主要报错字段;OKX/Order 等第三方异常原文也在此,先能显示。
+  return body?.detail || body?.message || (e as any)?.message || fallback || t("common.error");
 }
