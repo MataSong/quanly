@@ -11,10 +11,12 @@ class Strategy(models.Model):
     SOURCE_BUILTIN = "builtin"
     SOURCE_UPLOADED = "uploaded"  # 点击式:内置模板+参数(template 语义)
     SOURCE_CODE = "code"          # 用户上传 Python 脚本
+    SOURCE_VISUAL = "visual"      # 可视化构建:规则编译成 Python(存 code)
     SOURCE_CHOICES = [
         (SOURCE_BUILTIN, "Built-in"),
         (SOURCE_UPLOADED, "Template"),
         (SOURCE_CODE, "User Code"),
+        (SOURCE_VISUAL, "Visual"),
     ]
 
     VISIBILITY_PRIVATE = "private"
@@ -82,6 +84,8 @@ class Strategy(models.Model):
         max_length=16, choices=CHECK_CHOICES, default=CHECK_PENDING
     )
     check_report = models.JSONField(default=dict)
+    # 可视化构建器原始规则(source_type=visual);编译产物存 code 字段。
+    rule_config = models.JSONField(default=dict)
 
     class Meta:
         app_label = "core_strategy"
