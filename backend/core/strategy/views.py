@@ -44,6 +44,7 @@ class StrategySerializer(drf_serializers.ModelSerializer):
     params = drf_serializers.SerializerMethodField()
     code = drf_serializers.SerializerMethodField()
     check_report = drf_serializers.SerializerMethodField()
+    rule_config = drf_serializers.SerializerMethodField()
 
     class Meta:
         model = Strategy
@@ -55,6 +56,8 @@ class StrategySerializer(drf_serializers.ModelSerializer):
             "description", "reject_reason", "is_owner",
             # user-code fields (source_type=code)
             "code", "check_status", "check_report",
+            # visual builder field (source_type=visual)
+            "rule_config",
         ]
 
     def _request(self):
@@ -115,6 +118,19 @@ class StrategySerializer(drf_serializers.ModelSerializer):
         if self._is_visible_to_requester(obj):
             return obj.code or ""
         return ""
+
+    def get_rule_config(self, obj) -> dict:
+        """rule_config 脱敏 (仿 get_code):rule_config 含策略逻辑,不能暴露他人私有。
+          - 内置 (owner=None): 无规则 → {}
+          - 自己的: 返回 rule_config
+          - 他人 public+approved: 返回 rule_config (开放平台鼓励学习)
+          - 他人私有/pending/rejected: 脱敏 → {}
+        """
+        if obj.owner_id is None:
+            return {}
+        if self._is_visible_to_requester(obj):
+            return obj.rule_config or {}
+        return {}
 
     def get_check_report(self, obj) -> dict:
         """check_report 可能内含用户代码片段 (syntax msg / ast violations / trial error),
@@ -325,6 +341,48 @@ class StrategyCreateView(APIView):
 
             return Response(_serialize(strategy, request), status=status.HTTP_201_CREATED)
 
+        # ── visual 类型:可视化 rule_config → 编译成 Python code ──────────────────
+        if source_type == Strategy.SOURCE_VISUAL:
+            from core.strategy.rule_compiler import compile_rule, validate_rule_config
+
+            rule_config = request.data.get("rule_config") or {}
+
+            # 规则合法性校验(编译期):非法直接 400,不 save 半截数据。
+            try:
+                validate_rule_config(rule_config)
+                code = compile_rule(rule_config)
+            except ValueError as exc:
+                return Response(
+                    {"detail": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            strategy = Strategy.objects.create(
+                owner=request.user,               # 强制 owner=self,不信前端
+                name=name,
+                source_type=Strategy.SOURCE_VISUAL,
+                is_builtin=False,
+                rule_config=rule_config,          # 原始规则
+                code=code,                        # 编译产物
+                code_ref="",
+                template_ref="",
+                params={},
+                default_params={},
+                description=description,
+                visibility=visibility,
+                status=Strategy.STATUS_DRAFT,     # 强制 draft,不信前端
+            )
+
+            # 编译产物走 code 类型同一条三层检测链路。
+            from core.strategy.validation import validate_strategy_code
+
+            result = validate_strategy_code(code)
+            strategy.check_status = result.get("check_status", Strategy.CHECK_FAILED)
+            strategy.check_report = result.get("check_report", {})
+            strategy.save(update_fields=["check_status", "check_report", "updated_at"])
+
+            return Response(_serialize(strategy, request), status=status.HTTP_201_CREATED)
+
         # ── template 类型(uploaded):点击式内置模板 + 参数 ────────────────────────
         template_ref = (request.data.get("template_ref") or "").strip()
         params = request.data.get("params") or {}
@@ -467,6 +525,30 @@ class StrategyDetailView(APIView):
                 strategy.check_report = result.get("check_report", {})
                 update_fields += ["code", "check_status", "check_report"]
 
+        # visual 类型:支持改 rule_config。改动后重编译 code + 重跑检测。
+        # 规则非法直接 return 400(在 strategy.save 之前),不存半截数据。
+        if strategy.source_type == Strategy.SOURCE_VISUAL and "rule_config" in request.data:
+            new_rule_config = request.data.get("rule_config") or {}
+            if new_rule_config != strategy.rule_config:
+                from core.strategy.rule_compiler import compile_rule, validate_rule_config
+                from core.strategy.validation import validate_strategy_code
+
+                try:
+                    validate_rule_config(new_rule_config)
+                    new_code = compile_rule(new_rule_config)
+                except ValueError as exc:
+                    return Response(
+                        {"detail": str(exc)},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                strategy.rule_config = new_rule_config
+                strategy.code = new_code
+                result = validate_strategy_code(new_code)
+                strategy.check_status = result.get("check_status", Strategy.CHECK_FAILED)
+                strategy.check_report = result.get("check_report", {})
+                update_fields += ["rule_config", "code", "check_status", "check_report"]
+
         strategy.save(update_fields=update_fields)
 
         return Response(_serialize(strategy, request))
@@ -492,7 +574,7 @@ class StrategyCheckView(APIView):
     def post(self, request, pk):
         strategy = get_object_or_404(Strategy, pk=pk, owner=request.user)
 
-        if strategy.source_type != Strategy.SOURCE_CODE:
+        if strategy.source_type not in (Strategy.SOURCE_CODE, Strategy.SOURCE_VISUAL):
             return Response(
                 {"detail": "只有代码类型策略需要检测。"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -517,9 +599,9 @@ class StrategySubmitView(APIView):
     def post(self, request, pk):
         strategy = get_object_or_404(Strategy, pk=pk, owner=request.user)
 
-        # code 类型必须先通过技术检测才能提交审核 (template/builtin 不受此限)。
+        # code / visual 类型必须先通过技术检测才能提交审核 (template/builtin 不受此限)。
         if (
-            strategy.source_type == Strategy.SOURCE_CODE
+            strategy.source_type in (Strategy.SOURCE_CODE, Strategy.SOURCE_VISUAL)
             and strategy.check_status != Strategy.CHECK_PASSED
         ):
             return Response(

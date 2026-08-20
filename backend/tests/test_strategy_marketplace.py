@@ -1065,3 +1065,341 @@ def test_marketplace_bad_params_fallback(api_client):
     assert r.status_code == 200
     assert r.data["page"] == 1
     assert r.data["page_size"] == 12
+
+
+# ---------------------------------------------------------------------------
+# VB-T4: visual 类型 create / put / check / submit + rule_config 脱敏
+# ---------------------------------------------------------------------------
+
+# 合法 rule_config:MA(5) cross_above MA(20) 买入,cross_below 卖出。
+_VALID_RULE_CONFIG = {
+    "buy": {
+        "logic": "and",
+        "conditions": [
+            {"op": "cross_above",
+             "left": {"ind": "MA", "period": 5},
+             "right": {"ind": "MA", "period": 20}},
+        ],
+    },
+    "sell": {
+        "logic": "and",
+        "conditions": [
+            {"op": "cross_below",
+             "left": {"ind": "MA", "period": 5},
+             "right": {"ind": "MA", "period": 20}},
+        ],
+    },
+    "sz": 0.001,
+    "risk": {"take_profit_pct": 5, "stop_loss_pct": 3},
+}
+
+# 第二套合法规则(用于 put 改动 → 重编译产物不同)。
+_VALID_RULE_CONFIG_2 = {
+    "buy": {
+        "logic": "and",
+        "conditions": [
+            {"op": "cross_above",
+             "left": {"ind": "MA", "period": 3},
+             "right": {"ind": "MA", "period": 30}},
+        ],
+    },
+    "sz": 0.002,
+}
+
+
+def _make_visual_strategy(
+    owner: User,
+    name: str = "Visual Strat",
+    rule_config: dict | None = None,
+    code: str = _SAMPLE_CODE,
+    check_status: str = Strategy.CHECK_PASSED,
+    check_report: dict | None = None,
+    visibility: str = Strategy.VISIBILITY_PRIVATE,
+    status: str = Strategy.STATUS_DRAFT,
+) -> Strategy:
+    return Strategy.objects.create(
+        owner=owner,
+        name=name,
+        source_type=Strategy.SOURCE_VISUAL,
+        is_builtin=False,
+        rule_config=rule_config if rule_config is not None else dict(_VALID_RULE_CONFIG),
+        code=code,
+        code_ref="",
+        template_ref="",
+        params={},
+        default_params={},
+        visibility=visibility,
+        status=status,
+        check_status=check_status,
+        check_report=check_report or {"stage": "trial", "ok": True},
+    )
+
+
+@pytest.mark.django_db
+def test_create_visual_strategy_success(api_client):
+    """POST create source_type=visual + 合法 rule_config → 201;
+    DB rule_config 存了、code 非空(编译产物)、source=visual、owner=self、status=draft、check_status 有值。"""
+    user = _make_user("vis_c1", ["strategy:create"])
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_PASSED) as m:
+        resp = api_client.post("/api/strategy/strategies/create", {
+            "name": "My Visual Strat",
+            "source_type": "visual",
+            "rule_config": _VALID_RULE_CONFIG,
+        }, format="json")
+    assert resp.status_code == 201
+    m.assert_called_once()
+    data = resp.data
+    assert data["source_type"] == Strategy.SOURCE_VISUAL
+    assert data["status"] == Strategy.STATUS_DRAFT
+    assert data["check_status"] == Strategy.CHECK_PASSED
+    assert data["is_owner"] is True
+    # owner 自己能看到 rule_config
+    assert data["rule_config"] == _VALID_RULE_CONFIG
+
+    strat = Strategy.objects.get(pk=data["id"])
+    assert strat.owner_id == user.id
+    assert strat.rule_config == _VALID_RULE_CONFIG
+    assert strat.code.strip() != ""             # 编译产物非空
+    assert "on_tick" in strat.code              # 真是编译出的 on_tick
+    assert strat.source_type == Strategy.SOURCE_VISUAL
+
+
+@pytest.mark.django_db
+def test_create_visual_invalid_rule_400(api_client):
+    """create visual 规则非法(空/非法指标)→ 400 带 detail,不建记录,validate 不被调用。"""
+    user = _make_user("vis_c2", ["strategy:create"])
+    api_client.force_authenticate(user)
+    before = Strategy.objects.count()
+    # rule_config 为空(buy/sell 都无 conditions)→ validate_rule_config raise
+    with patch(_VALIDATE, return_value=_PASSED) as m:
+        resp = api_client.post("/api/strategy/strategies/create", {
+            "name": "Bad Visual",
+            "source_type": "visual",
+            "rule_config": {},
+        }, format="json")
+    assert resp.status_code == 400
+    assert "detail" in resp.data
+    m.assert_not_called()                       # 规则非法,不进检测链路
+    assert Strategy.objects.count() == before   # 没建半截记录
+
+
+@pytest.mark.django_db
+def test_create_visual_illegal_indicator_400(api_client):
+    """create visual 非白名单指标 → 400,不建记录。"""
+    user = _make_user("vis_c3", ["strategy:create"])
+    api_client.force_authenticate(user)
+    before = Strategy.objects.count()
+    bad = {
+        "buy": {"conditions": [
+            {"op": ">", "left": {"ind": "EVIL"}, "right": {"const": 1}},
+        ]},
+    }
+    resp = api_client.post("/api/strategy/strategies/create", {
+        "name": "Evil Indicator",
+        "source_type": "visual",
+        "rule_config": bad,
+    }, format="json")
+    assert resp.status_code == 400
+    assert Strategy.objects.count() == before
+
+
+@pytest.mark.django_db
+def test_create_visual_non_numeric_param_400(api_client):
+    """create visual 非数字参数(注入企图)→ 400(anti-injection gate)。"""
+    user = _make_user("vis_c4", ["strategy:create"])
+    api_client.force_authenticate(user)
+    before = Strategy.objects.count()
+    bad = {
+        "buy": {"conditions": [
+            {"op": ">", "left": {"ind": "MA", "period": "__import__('os')"},
+             "right": {"const": 1}},
+        ]},
+    }
+    resp = api_client.post("/api/strategy/strategies/create", {
+        "name": "Injection",
+        "source_type": "visual",
+        "rule_config": bad,
+    }, format="json")
+    assert resp.status_code == 400
+    assert Strategy.objects.count() == before
+
+
+@pytest.mark.django_db
+def test_create_visual_forces_owner_and_status(api_client):
+    """create visual:不信前端 owner/status,强制 owner=self + draft。"""
+    other = _make_user("vis_other")
+    user = _make_user("vis_c5", ["strategy:create"])
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_PASSED):
+        resp = api_client.post("/api/strategy/strategies/create", {
+            "name": "Sneaky Visual",
+            "source_type": "visual",
+            "rule_config": _VALID_RULE_CONFIG,
+            "owner": other.pk,
+            "status": Strategy.STATUS_APPROVED,
+        }, format="json")
+    assert resp.status_code == 201
+    strat = Strategy.objects.get(pk=resp.data["id"])
+    assert strat.owner_id == user.id
+    assert strat.status == Strategy.STATUS_DRAFT
+
+
+@pytest.mark.django_db
+def test_update_visual_reruns_compile_and_check(api_client):
+    """PUT visual 改 rule_config → 200,code 重编译(变了)、check 重跑、非draft被reset成draft。"""
+    owner = _make_user("vis_u1", ["strategy:view", "strategy:update"])
+    strat = _make_visual_strategy(
+        owner, name="Visual Edit",
+        rule_config=dict(_VALID_RULE_CONFIG),
+        status=Strategy.STATUS_APPROVED,        # 非 draft → 编辑后应 reset
+        visibility=Strategy.VISIBILITY_PUBLIC,
+        check_status=Strategy.CHECK_PASSED,
+    )
+    old_code = None
+    # 先记录当前 code(用编译器真实产物,便于比对变化)
+    from core.strategy.rule_compiler import compile_rule
+    strat.code = compile_rule(_VALID_RULE_CONFIG)
+    strat.save(update_fields=["code"])
+    old_code = strat.code
+
+    api_client.force_authenticate(owner)
+    with patch(_VALIDATE, return_value=_FAILED):
+        resp = api_client.put(f"/api/strategy/strategies/{strat.pk}", {
+            "rule_config": _VALID_RULE_CONFIG_2,
+        }, format="json")
+    assert resp.status_code == 200
+    strat.refresh_from_db()
+    assert strat.rule_config == _VALID_RULE_CONFIG_2   # 规则改了
+    assert strat.code != old_code                      # code 重编译(不同规则→不同产物)
+    assert "on_tick" in strat.code
+    assert strat.check_status == Strategy.CHECK_FAILED  # 重跑了检测
+    assert strat.status == Strategy.STATUS_DRAFT        # 非 draft 被 reset
+
+
+@pytest.mark.django_db
+def test_update_visual_invalid_rule_400_no_corruption(api_client):
+    """PUT visual 非法 rule_config → 400,原记录不被破坏(rule_config/code 没变半截)。"""
+    owner = _make_user("vis_u2", ["strategy:view", "strategy:update"])
+    from core.strategy.rule_compiler import compile_rule
+    good_code = compile_rule(_VALID_RULE_CONFIG)
+    strat = _make_visual_strategy(
+        owner, name="Visual Bad Edit",
+        rule_config=dict(_VALID_RULE_CONFIG),
+        code=good_code,
+        status=Strategy.STATUS_DRAFT,
+    )
+    api_client.force_authenticate(owner)
+    resp = api_client.put(f"/api/strategy/strategies/{strat.pk}", {
+        "rule_config": {"buy": {"conditions": [
+            {"op": "BADOP", "left": {"ind": "MA", "period": 5}, "right": {"const": 1}},
+        ]}},
+    }, format="json")
+    assert resp.status_code == 400
+    strat.refresh_from_db()
+    # 原记录未被破坏
+    assert strat.rule_config == _VALID_RULE_CONFIG
+    assert strat.code == good_code
+
+
+@pytest.mark.django_db
+def test_check_visual_strategy(api_client):
+    """check visual 策略能 check(不再 400),重跑 validate 更新 check_status。"""
+    user = _make_user("vis_chk1", ["strategy:update"])
+    strat = _make_visual_strategy(user, check_status=Strategy.CHECK_FAILED,
+                                  check_report={"stage": "ast"})
+    api_client.force_authenticate(user)
+    with patch(_VALIDATE, return_value=_PASSED) as m:
+        resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/check")
+    assert resp.status_code == 200
+    m.assert_called_once()
+    assert resp.data["check_status"] == Strategy.CHECK_PASSED
+    strat.refresh_from_db()
+    assert strat.check_status == Strategy.CHECK_PASSED
+
+
+@pytest.mark.django_db
+def test_submit_visual_requires_check_passed(api_client):
+    """submit visual with check_status=failed → 400,保持 draft。"""
+    user = _make_user("vis_sub1", ["strategy:update"])
+    strat = _make_visual_strategy(user, check_status=Strategy.CHECK_FAILED)
+    api_client.force_authenticate(user)
+    resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/submit")
+    assert resp.status_code == 400
+    assert "检测未通过" in resp.data["detail"]
+    strat.refresh_from_db()
+    assert strat.status == Strategy.STATUS_DRAFT
+
+
+@pytest.mark.django_db
+def test_submit_visual_passed_goes_pending(api_client):
+    """submit visual with check_status=passed → pending + public。"""
+    user = _make_user("vis_sub2", ["strategy:update"])
+    strat = _make_visual_strategy(user, check_status=Strategy.CHECK_PASSED)
+    api_client.force_authenticate(user)
+    resp = api_client.post(f"/api/strategy/strategies/{strat.pk}/submit")
+    assert resp.status_code == 200
+    assert resp.data["status"] == Strategy.STATUS_PENDING
+    assert resp.data["visibility"] == Strategy.VISIBILITY_PUBLIC
+
+
+@pytest.mark.django_db
+def test_rule_config_masked_for_other_private():
+    """Serializer: 他人私有 visual 策略 → rule_config={}(+code=''); 不泄露策略逻辑。"""
+    from core.strategy.views import StrategySerializer
+    from django.test import RequestFactory
+    from rest_framework.request import Request as DRFRequest
+
+    owner = _make_user("vis_mask_owner")
+    viewer = _make_user("vis_mask_viewer")
+    strat = _make_visual_strategy(
+        owner, rule_config=dict(_VALID_RULE_CONFIG),
+        visibility=Strategy.VISIBILITY_PRIVATE, status=Strategy.STATUS_DRAFT,
+    )
+    factory = RequestFactory()
+    raw = factory.get("/")
+    drf_req = DRFRequest(raw)
+    drf_req.user = viewer
+    data = StrategySerializer(strat, context={"request": drf_req}).data
+    assert data["rule_config"] == {}
+    assert data["code"] == ""
+
+
+@pytest.mark.django_db
+def test_rule_config_visible_for_owner_and_public_approved():
+    """Serializer: owner 看到自己的 rule_config;他人看到 public+approved 的 rule_config。"""
+    from core.strategy.views import StrategySerializer
+    from django.test import RequestFactory
+    from rest_framework.request import Request as DRFRequest
+
+    owner = _make_user("vis_vis_owner")
+    viewer = _make_user("vis_vis_viewer")
+    factory = RequestFactory()
+
+    own = _make_visual_strategy(owner, rule_config=dict(_VALID_RULE_CONFIG),
+                                visibility=Strategy.VISIBILITY_PRIVATE)
+    raw = factory.get("/"); req_own = DRFRequest(raw); req_own.user = owner
+    d_own = StrategySerializer(own, context={"request": req_own}).data
+    assert d_own["rule_config"] == _VALID_RULE_CONFIG
+
+    pub = _make_visual_strategy(
+        owner, name="Pub Visual", rule_config=dict(_VALID_RULE_CONFIG_2),
+        visibility=Strategy.VISIBILITY_PUBLIC, status=Strategy.STATUS_APPROVED,
+    )
+    raw2 = factory.get("/"); req_pub = DRFRequest(raw2); req_pub.user = viewer
+    d_pub = StrategySerializer(pub, context={"request": req_pub}).data
+    assert d_pub["rule_config"] == _VALID_RULE_CONFIG_2
+
+
+@pytest.mark.django_db
+def test_run_guard_own_visual_strategy_passes(api_client):
+    """POST /runs 用自己的 visual 策略 → 201(自己能跑)。"""
+    user = _make_user("vis_run", ["strategy:run"])
+    strat = _make_visual_strategy(user, visibility=Strategy.VISIBILITY_PRIVATE,
+                                  status=Strategy.STATUS_DRAFT)
+    api_client.force_authenticate(user)
+    resp = api_client.post("/api/strategy/runs", {
+        "strategy_id": strat.pk,
+        "symbol": "BTC-USDT",
+    }, format="json")
+    assert resp.status_code == 201
